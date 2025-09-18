@@ -3,3 +3,4 @@ vectorstore_faiss/
 __pycache__/
 .venv/
 .idea/
+*.pem
