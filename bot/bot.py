@@ -6,8 +6,6 @@ import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from injection_filter import COMPILED_PATTERNS
-#from semantic_search import SemanticSearcher
 from settings import TELEGRAM_TOKEN
 
 logging.basicConfig(

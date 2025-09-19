@@ -107,6 +107,7 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
         json_data = json.loads(post_data.decode('utf-8'))
+
         is_safe = self.moderator.check_question(json_data["question"])
 
         response = {
