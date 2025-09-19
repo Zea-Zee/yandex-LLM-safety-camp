@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from injection_filter import COMPILED_PATTERNS
-from semantic_search import SemanticSearcher
+#from semantic_search import SemanticSearcher
 from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, TELEGRAM_TOKEN
 
 logging.basicConfig(
@@ -86,10 +86,10 @@ class YandexGPTBot:
         """Запрос к Yandex GPT API"""
         if self.heuristic_filter(question):
             return "Не надо пытаться меня взломать"
-        if self.searcher is None:
-            self.searcher = SemanticSearcher()
-        context_chunks = "\n\n".join([doc.page_content for doc in self.searcher.invoke(question)])
-        print(context_chunks)
+        # if self.searcher is None:
+        #     self.searcher = SemanticSearcher()
+        # context_chunks = "\n\n".join([doc.page_content for doc in self.searcher.invoke(question)])
+        # print(context_chunks)
 
         try:
             iam_token = self.get_iam_token()

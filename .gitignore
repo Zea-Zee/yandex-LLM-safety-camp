@@ -1,6 +1,6 @@
-.env
-vectorstore_faiss/
-__pycache__/
-.venv/
-.idea/
+*.env
+*vectorstore_faiss/
+*__pycache__/
+*.venv/
+*.idea/
 *.pem
