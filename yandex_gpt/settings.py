@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv("yandex_gpt/.yandex_gpt.env")
 
 SERVICE_ACCOUNT_ID = os.getenv("SERVICE_ACCOUNT_ID")
 KEY_ID = os.getenv("KEY_ID")

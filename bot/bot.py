@@ -34,7 +34,7 @@ class TelegramBot:
             response = requests.post(url_moderator, json=data_moderator)
             response.raise_for_status()  # Проверяем на ошибки HTTP
             is_safe = response.json()['is_safe']
-            
+
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при запросе к серверу: {e}")
             return None
@@ -52,10 +52,10 @@ class TelegramBot:
         try:
             response = requests.post(url_gpt, json=data_gpt)
             response.raise_for_status()  # Проверяем на ошибки HTTP
-            
+
             result = response.json()['gpt_answer']
             return result
-            
+
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при запросе к серверу: {e}")
             return None
@@ -115,7 +115,7 @@ def main():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_error_handler(error_handler)
 
-        logger.info("Бот запускается...")
+        logger.info(f"Бот запускается с токеном {TELEGRAM_TOKEN}")
         application.run_polling()
 
     except Exception as e:
