@@ -6,7 +6,7 @@ import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from settings import TELEGRAM_TOKEN
+from settings import TELEGRAM_TOKEN, ORCHESTRATOR_ADDRESS
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -18,46 +18,23 @@ logger = logging.getLogger(__name__)
 
 class TelegramBot:
     def __init__(self):
-        pass
+        self.orchestrator_address = ORCHESTRATOR_ADDRESS
 
     def ask_gpt(self, question):
-        url_gpt = "http://localhost:8000"
-        url_moderator = "http://localhost:8001"
-
-        data_moderator = {
+        data = {
             "question": question
         }
-        # Проверка модератором
+
         try:
-            response = requests.post(url_moderator, json=data_moderator)
-            response.raise_for_status()  # Проверяем на ошибки HTTP
-            is_safe = response.json()['is_safe']
-            
+            response = requests.post(self.orchestrator_address, json=data)
+            response.raise_for_status()
+            gpt_answer = response.json()['gpt_answer']
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при запросе к серверу: {e}")
             return None
 
-        if is_safe == False:
-            result = "Ваш вопрос не прошел модерацию. Попробуйте по другому сформулировать вопрос."
-            return result
-
-        data_gpt = {
-            "message": {
-                "user": question
-            }
-        }
-
-        try:
-            response = requests.post(url_gpt, json=data_gpt)
-            response.raise_for_status()  # Проверяем на ошибки HTTP
-            
-            result = response.json()['gpt_answer']
-            return result
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Ошибка при запросе к серверу: {e}")
-            return None
-
+        return gpt_answer
+    
 
 yandex_bot = TelegramBot()
 
