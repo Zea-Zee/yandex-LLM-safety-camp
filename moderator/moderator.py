@@ -5,7 +5,6 @@ import jwt
 import requests
 
 from injection_filter import COMPILED_PATTERNS
-from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, TELEGRAM_TOKEN
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
@@ -111,7 +110,7 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
         is_safe = self.moderator.check_question(json_data['question'])
 
         response = {
-            "is_safe": is_safe#json_data
+            "is_safe": is_safe
         }
 
         self._send_json_response(response)
