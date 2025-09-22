@@ -6,4 +6,6 @@ COPY . ./orchestrator
 
 WORKDIR /app/orchestrator
 
+EXPOSE 8003
+
 CMD ["python", "orchestrator.py"]
