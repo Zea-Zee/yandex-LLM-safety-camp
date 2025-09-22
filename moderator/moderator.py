@@ -1,10 +1,9 @@
 import logging
-import time
 
-import jwt
 import requests
 
 from injection_filter import COMPILED_PATTERNS
+from settings import YANDEXGPT_ADDRESS
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
@@ -38,28 +37,38 @@ class Moderator:
         return ""
 
     def ask_yandexGPT(self, messages):
-        url = "http://localhost:8000"
-
-        data = {
-            "message": {
-                "system": messages.get("system", ""),
-                "user": messages["user"]
+        """
+        Отправляет запрос в YandexGPT.
+        """
+        try:
+            data = {
+                "message": {
+                    "system": messages.get("system", ""),
+                    "user": messages["user"]
+                }
             }
-        }
+        except Exception as e:
+            logger.error(f"""Ошибка в формате сообщения, 
+                             правильный формат:
+                             {{"system": "system message (не обязателен)", "user": "user message (обязателен)"}} 
+                             Ошибка: {str(e)}""")
+            return None
 
         try:
-            response = requests.post(url, json=data)
+            response = requests.post(YANDEXGPT_ADDRESS, json=data)
             response.raise_for_status()  # Проверяем на ошибки HTTP
             
             result = response.json()
             return result["gpt_answer"]
             
         except requests.exceptions.RequestException as e:
-            print(f"Ошибка при запросе к серверу: {e}")
+            logger.error(f"Ошибка при запросе к серверу: {e}")
             return None
 
     def check_question(self, question):
-        """Запрос к Yandex GPT API"""
+        """
+        Проверка сообщения на безопасность при помощи регулярных выражений и запроса в GPT.
+        """
         if self.heuristic_filter(question):
             return "Не надо пытаться меня взломать."
 
@@ -104,22 +113,42 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data).encode())
 
     def do_POST(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
-        json_data = json.loads(post_data.decode('utf-8'))
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            json_data = json.loads(post_data.decode('utf-8'))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.exception("Failed to read or parse request body")
+            self._send_json_response({"error": "invalid request body"}, status=400)
+            return None
+        
+        if "question" not in json_data:
+            logger.exception("Missing 'question' field in request JSON")
+            self._send_json_response({"error": "missing 'question' field"}, status=400)
+            return None
 
-        is_safe = self.moderator.check_question(json_data["question"])
-
+        try:
+            is_safe = self.moderator.check_question(json_data["question"])
+        except Exception as e:
+            logger.exception("Moderator check_question failed")
+            self._send_json_response({"error": "internal server error"}, status=500)
+            return None
+        
         response = {
             "is_safe": is_safe
         }
 
-        self._send_json_response(response)
+        try:
+            self._send_json_response(response)
+        except Exception as e:
+            logger.exception("Failed to send response")
+            self._send_json_response({"error": "internal server error"}, status=500)
+            return None
 
 def main():
     server_adress = ('', 8001)
     httpd = HTTPServer(server_adress, ModeratorRequestHandler)
-    print("Moderator is running on port 8001")
+    logger.info("Moderator is running on port 8001")
     
     httpd.serve_forever()
 
