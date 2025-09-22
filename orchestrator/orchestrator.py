@@ -22,6 +22,16 @@ class Orchestrator:
         self.moderator_address = MODERATOR_ADDRESS
         self.rag_address = RAG_ADDRESS
 
+    def create_messages_for_gpt(self, messages):
+        data = {
+            "message": {
+                "system": messages.get("system", ""),
+                "user": messages["user"]
+            }
+        }
+        
+        return data
+
     def check_message(self, question):
         """ Проверка сообщения на безопасность """
         data_moderator = {
@@ -53,15 +63,11 @@ class Orchestrator:
 
         return context
     
-    def gpt_request(self, question):
-        data_yandex_gpt = {
-            "message": {
-                "user": question
-            }
-        }
+    def gpt_request(self, messages):
+        data = self.create_messages_for_gpt(messages)
 
         try:
-            response = requests.post(self.yandex_gpt_adress, json=data_yandex_gpt)
+            response = requests.post(self.yandex_gpt_adress, json=data)
             response.raise_for_status()
             gpt_answer = response.json()['gpt_answer']
         except requests.exceptions.RequestException as e:
@@ -77,7 +83,8 @@ class Orchestrator:
             return result
 
         context = self.rag_request(question)
-        question_w_context = 'Конеткст: ' + context + '\n\nВопрос: ' + question
+        question_w_context = {"system": "Контекст: " + context + "\n\nИспользуйте контекст, чтобы ответить на вопрос. Если контекст не соответствует вопросу, то не используйте его.", 
+                              "user": question}
         gpt_final_answer = self.gpt_request(question_w_context)
 
         return gpt_final_answer
