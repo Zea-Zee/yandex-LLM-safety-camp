@@ -30,7 +30,7 @@ class TelegramBot:
             response.raise_for_status()
             gpt_answer = response.json()['gpt_answer']
         except requests.exceptions.RequestException as e:
-            print(f"Ошибка при запросе к серверу: {e}")
+            logger.error(f"Ошибка при запросе к серверу: {e}")
             return None
 
         return gpt_answer
@@ -40,7 +40,10 @@ yandex_bot = TelegramBot()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
+    """
+    Обработчик команды /start
+    """
+    
     await update.message.reply_text(
         "Привет! Я бот для работы с Yandex GPT. Просто напиши мне свой вопрос"
     )
