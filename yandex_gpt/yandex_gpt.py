@@ -128,21 +128,37 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data).encode())
 
     def do_POST(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
-        json_data = json.loads(post_data.decode('utf-8'))
-        gpt_answer = self.yandex_gpt.ask_gpt(json_data) #(json_data['messages'])
-
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            json_data = json.loads(post_data.decode('utf-8'))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.exception("Failed to read or parse request body")
+            self._send_json_response({"error": "invalid request body"}, status=400)
+            return None
+        
+        try:
+            gpt_answer = self.yandex_gpt.ask_gpt(json_data) #(json_data['messages'])
+        except Exception as e:
+            logger.exception("Moderator check_question failed")
+            self._send_json_response({"error": "internal server error"}, status=500)
+            return None
+        
         response = {
             "gpt_answer": gpt_answer
         }
 
-        self._send_json_response(response)
-
+        try:
+            self._send_json_response(response) 
+        except Exception as e:
+            logger.exception("Failed to send response")
+            self._send_json_response({"error": "internal server error"}, status=500)
+            return None
+    
 def main():
     server_adress = ('', 8000)
     httpd = HTTPServer(server_adress, YandexGPTRequestHandler)
-    print("YandexGPT is running on port 8000")
+    logger.info("YandexGPT is running on port 8000")
     
     httpd.serve_forever()
 
