@@ -17,16 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramBot:
-    def __init__(self):
-        self.orchestrator_address = ORCHESTRATOR_ADDRESS
-
     def ask_gpt(self, question):
-        data = {
-            "question": question
-        }
+        query = {"question": question}
 
         try:
-            response = requests.post(self.orchestrator_address, json=data)
+            response = requests.post(ORCHESTRATOR_ADDRESS + '/ask_gpt', json=query)
             response.raise_for_status()
             gpt_answer = response.json()['gpt_answer']
         except requests.exceptions.RequestException as e:
@@ -34,7 +29,7 @@ class TelegramBot:
             return None
 
         return gpt_answer
-    
+
 
 yandex_bot = TelegramBot()
 
@@ -43,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Обработчик команды /start
     """
-    
+
     await update.message.reply_text(
         "Привет! Я бот для работы с Yandex GPT. Просто напиши мне свой вопрос"
     )

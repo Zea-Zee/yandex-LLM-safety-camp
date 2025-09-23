@@ -4,7 +4,7 @@ import time
 import jwt
 import requests
 
-from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, TELEGRAM_TOKEN
+from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
@@ -62,18 +62,18 @@ class YandexGPTApi:
         except Exception as e:
             logger.error(f"Error generating IAM token: {str(e)}")
             raise
-    
+
     def transform_messages(self, input_dict):
         result = []
-        if 'system' in input_dict['message']:
+        if 'system' in input_dict:
             result.append({
                 "role": "system",
-                "text": input_dict['message']['system']
+                "text": input_dict['system']
             })
-        if 'user' in input_dict['message']:
+        if 'user' in input_dict:
             result.append({
-                "role": "user", 
-                "text": input_dict['message']['user']
+                "role": "user",
+                "text": input_dict['user']
             })
         return result
 
