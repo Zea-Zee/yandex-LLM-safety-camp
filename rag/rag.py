@@ -77,7 +77,7 @@ def build_vectorstore(docs: List[Document]) -> FAISS:
     chunks = splitter.split_documents(docs)
     send_to_logger("info", f"Создано {len(chunks)} чанков")
 
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vectorstore = FAISS.from_documents(chunks, embeddings)
     current_dir = os.path.dirname(os.path.abspath(__file__))
     vectorstore.save_local(os.path.join(current_dir, "vectorstore_faiss"))
@@ -155,7 +155,7 @@ class RAGHelper:
     """Работа с векторным индексом и извлечение релевантных фрагментов."""
 
     def __init__(self):
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         current_dir = os.path.dirname(os.path.abspath(__file__))
         vectorstore_path = os.path.join(current_dir, "vectorstore_faiss")
 
@@ -213,7 +213,7 @@ class RAGHelper:
 
     def _build_empty_index(self) -> FAISS:
         """Создает пустое векторное хранилище с заглушкой"""
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         docs = [Document(page_content="Нет доступных документов.")]
         return FAISS.from_documents(docs, embeddings)
 
