@@ -1,49 +1,56 @@
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-import requests
+import aiohttp
+from aiohttp import web
 
 from settings import ADDRESSES
 
-logger_client = requests.Session()
-logger_client.headers.update({'Content-Type': 'application/json'})
+
+async def logger(level, message):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ADDRESSES['LOGGER_ADDRESS'], json={'level': level, 'message': message}) as response:
+            return await response.json()
 
 
-def logger(level, message):
-    return requests.post(ADDRESSES['LOGGER_ADDRESS'], json={'level': level, 'message': message})
+async def _request_moderator(question):
+    print('asking moderator')
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ADDRESSES['MODERATOR_ADDRESS'], json={'question': question}) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data['is_safe']
 
 
-def _request_moderator(question):
-    response = requests.post(ADDRESSES['MODERATOR_ADDRESS'], json={'question': question})
-    response.raise_for_status()
-    is_safe = response.json()['is_safe']
-    return is_safe
+async def _request_rag(question):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ADDRESSES['RAG_ADDRESS'], json={'question': question}) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data['context']
 
 
-def _request_rag(question):
-    response = requests.get(ADDRESSES['RAG_ADDRESS'], json={'question': question})
-    response.raise_for_status()
-    context = response.json()['context']
-    return context
-
-
-def request_gpt(user, system=None):
+async def request_gpt(user, system=None):
     if system is None:
         data = {'user': user}
     else:
         data = {'user': user, 'system': system}
-    response = requests.post(ADDRESSES['YANDEX_GPT_ADDRESS'], json=data)
-    response.raise_for_status()
-    return response.json()
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ADDRESSES['YANDEX_GPT_ADDRESS'], json=data) as response:
+            response.raise_for_status()
+            return await response.json()
 
 
-def ask_gpt_pipeline(question):
-    is_safe = _request_moderator(question)
+async def ask_gpt_pipeline(question):
+    print('/ask_gpt: ', question)
+    is_safe = await _request_moderator(question)
+    print('is_safe: ', is_safe)
     if not is_safe:
         return {'gpt_answer': 'Ваш вопрос не прошел модерацию. Попробуйте по другому сформулировать вопрос.'}
 
-    context = _request_rag(question)
-    gpt_response = request_gpt(
+    print(is_safe)
+
+    context = await _request_rag(question)
+    gpt_response = await request_gpt(
         system=f"""
         Контекст: {context} 
         Используйте контекст, чтобы ответить на вопрос. 
@@ -56,48 +63,40 @@ def ask_gpt_pipeline(question):
     return gpt_response
 
 
-class OrchestratorRequestHandler(BaseHTTPRequestHandler):
-    def _retrieve_message(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
-        query = json.loads(post_data.decode('utf-8'))
-        return query
+async def handle_post(request):
+    try:
+        query = await request.json()
+    except:
+        return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
 
-    def _send_json_response(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
-
-    def _set_response(self, status_code=200):
-        self.send_response(status_code)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-
-    def do_POST(self):
-        query = self._retrieve_message()
-        match self.path:
-            case '/ask_gpt':
-                gpt_answer = ask_gpt_pipeline(**query)
-                self._send_json_response(gpt_answer)
-            case '/gpt_moderator':
-                print(query)
-                gpt_answer = request_gpt(**query)
-                self._send_json_response(gpt_answer)
-            case '/log':
-                response = logger(**query)
-                self._send_json_response(response)
-            case _:
-                self._send_json_response({"status": "error", "message": "Endpoint not found. Use /"}, 404)
+    match request.path:
+        case '/ask_gpt':
+            print('/ask_gpt')
+            gpt_answer = await ask_gpt_pipeline(**query)
+            return web.json_response(gpt_answer)
+        case '/gpt_moderator':
+            print('/gpt_moderator')
+            gpt_answer = await request_gpt(**query)
+            return web.json_response(gpt_answer)
+        case '/log':
+            response = await logger(**query)
+            return web.json_response(response)
+        case _:
+            return web.json_response({"status": "error", "message": "Endpoint not found. Use /"}, status=404)
 
 
 def main():
     port = 8003
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, OrchestratorRequestHandler)
-    logger('info', f"Orchestrator is running on port {port}")
 
-    httpd.serve_forever()
+    app = web.Application()
+    app.router.add_post('/', handle_post)
+    app.router.add_post('/{path:.*}', handle_post)
+
+    import requests
+    requests.post(ADDRESSES['LOGGER_ADDRESS'],
+                  json={'level': 'info', 'message': f"Orchestrator is running on port {port}"})
+
+    web.run_app(app, host='', port=port)
 
 
 if __name__ == '__main__':
