@@ -181,7 +181,7 @@ class RAGHelper:
             s3.client.download_file(S3_BUCKET, f"{vectorstore_key}/index.faiss", "/tmp/index.faiss")
             s3.client.download_file(S3_BUCKET, f"{vectorstore_key}/index.pkl", "/tmp/index.pkl")
 
-            embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+            embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
             vectorstore = FAISS.load_local("/tmp", embeddings, allow_dangerous_deserialization=True)
             send_to_logger("info", "Готовое векторное хранилище загружено из S3")
             return vectorstore
