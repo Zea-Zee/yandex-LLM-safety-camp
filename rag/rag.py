@@ -252,7 +252,7 @@ class RAGRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Health check endpoint для serverless контейнера"""
         if self.path == '/health':
-            self._send_json_response({"status": "healthy", "service": "rag"})
+            self._send_json_response({"status": "healthy", "service": "rag", "ORCHESTRATOR_ADDRESS": ORCHESTRATOR_ADDRESS})
         else:
             self._send_json_response({"error": "not found"}, status=404)
 
