@@ -38,7 +38,7 @@ docker build -t logger-image ./logger
 # 4. Останавливаем старые контейнеры (если есть)
 # -------------------------
 echo "Stopping old containers..."
-docker rm -f bot moderator orchestrator rag yandex_gpt 2>/dev/null || true
+docker rm -f bot moderator orchestrator rag yandex_gpt logger 2>/dev/null || true
 
 # -------------------------
 # 5. Запуск контейнеров в общей сети
