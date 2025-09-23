@@ -1,20 +1,25 @@
-import logging
 import time
 
 import jwt
 import requests
 
-from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, TELEGRAM_TOKEN
+from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, ORCHESTRATOR_ADDRESS
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-logger = logging.getLogger(__name__)
+def send_to_logger(level, message):
+    log_message = {
+        "name": "GPT",
+        "level": level,
+        "message": message
+    }
+    try:
+        orchestrator = ORCHESTRATOR_ADDRESS + '/log'
+        response = requests.post(orchestrator, json=log_message)
+    except Exception as e:
+        print(f"Error when send log: {str(e)}")
+        return False
 
 class YandexGPTApi:
     def __init__(self):
@@ -56,24 +61,24 @@ class YandexGPTApi:
             self.iam_token = token_data['iamToken']
             self.token_expires = now + 3500  # На 100 секунд меньше срока действия
 
-            logger.info("IAM token generated successfully")
+            send_to_logger("info", "IAM token generated successfully")
             return self.iam_token
 
         except Exception as e:
-            logger.error(f"Error generating IAM token: {str(e)}")
+            send_to_logger("error", f"Error generating IAM token: {str(e)}")
             raise
-    
+
     def transform_messages(self, input_dict):
         result = []
-        if 'system' in input_dict['message']:
+        if 'system' in input_dict:
             result.append({
                 "role": "system",
-                "text": input_dict['message']['system']
+                "text": input_dict['system']
             })
-        if 'user' in input_dict['message']:
+        if 'user' in input_dict:
             result.append({
-                "role": "user", 
-                "text": input_dict['message']['user']
+                "role": "user",
+                "text": input_dict['user']
             })
         return result
 
@@ -107,13 +112,13 @@ class YandexGPTApi:
             )
 
             if response.status_code != 200:
-                logger.error(f"Yandex GPT API error: {response.text}")
+                send_to_logger("error", f"Yandex GPT API error: {response.text}")
                 raise Exception(f"Ошибка API: {response.status_code}")
 
             return response.json()['result']['alternatives'][0]['message']['text']
 
         except Exception as e:
-            logger.error(f"Error in ask_gpt: {str(e)}")
+            send_to_logger("error", f"Error in ask_gpt: {str(e)}")
             raise
 
 class YandexGPTRequestHandler(BaseHTTPRequestHandler):
@@ -127,22 +132,28 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def _retrieve_message(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        query = json.loads(post_data.decode('utf-8'))
+        user = query['user']
+        system = query.get('system', None)
+        return query
+
     def do_POST(self):
         try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            json_data = json.loads(post_data.decode('utf-8'))
-        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.exception("Failed to read or parse request body")
+            json_data = self._retrieve_message()
+        except Exception as e:
+            send_to_logger("error", "Failed to read or parse request body")
             self._send_json_response({"error": "invalid request body"}, status=400)
-            return None
+            return
         
         try:
-            gpt_answer = self.yandex_gpt.ask_gpt(json_data) #(json_data['messages'])
+            gpt_answer = self.yandex_gpt.ask_gpt(json_data)
         except Exception as e:
-            logger.exception("Moderator check_question failed")
+            send_to_logger("error", "Moderator check_question failed")
             self._send_json_response({"error": "internal server error"}, status=500)
-            return None
+            return
         
         response = {
             "gpt_answer": gpt_answer
@@ -151,14 +162,15 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
         try:
             self._send_json_response(response) 
         except Exception as e:
-            logger.exception("Failed to send response")
+            send_to_logger("error", "Failed to send response")
             self._send_json_response({"error": "internal server error"}, status=500)
-            return None
+            return
     
 def main():
+    time.sleep(5)
     server_adress = ('', 8000)
     httpd = HTTPServer(server_adress, YandexGPTRequestHandler)
-    logger.info("YandexGPT is running on port 8000")
+    send_to_logger("info", "YandexGPT is running on port 8000")
     
     httpd.serve_forever()
 
