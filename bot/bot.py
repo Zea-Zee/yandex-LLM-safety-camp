@@ -89,7 +89,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 class BotRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server):
-        self.bot_application = None
         super().__init__(request, client_address, server)
 
     def _send_json_response(self, data, status=200):
@@ -114,9 +113,7 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                 update_data = json.loads(post_data.decode('utf-8'))
 
                 # Создаем Update объект из данных webhook
-                update = Update.de_json(
-                    update_data, self.bot_application.bot
-                )
+                update = Update.de_json(update_data, bot_application.bot)
 
                 # Обрабатываем update асинхронно
                 import asyncio
@@ -150,30 +147,34 @@ class BotRequestHandler(BaseHTTPRequestHandler):
         pass
 
 
+# Глобальная переменная для application
+bot_application = None
+
+
 def main():
     """Основная функция"""
+    global bot_application
+
     try:
         # Создаем приложение для обработки сообщений
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
 
         # Добавляем обработчики
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(
+        bot_application.add_handler(CommandHandler("start", start))
+        bot_application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
         )
-        application.add_error_handler(error_handler)
+        bot_application.add_error_handler(error_handler)
 
-        # Инициализируем бота
-        application.initialize()
+        # Инициализируем бота асинхронно
+        import asyncio
+        asyncio.run(bot_application.initialize())
 
         # Создаем HTTP сервер
         # Serverless контейнеры автоматически устанавливают переменную PORT
         port = int(os.getenv('PORT', 8080))
         server_address = ('', port)
         httpd = HTTPServer(server_address, BotRequestHandler)
-
-        # Передаем application в handler
-        BotRequestHandler.bot_application = application
 
         logger.info(f"Бот запускается на порту {port}...")
         logger.info("Health check: GET /health")
