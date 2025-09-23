@@ -77,7 +77,7 @@ def build_vectorstore(docs: List[Document]) -> FAISS:
     chunks = splitter.split_documents(docs)
     send_to_logger("info", f"Создано {len(chunks)} чанков")
 
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     vectorstore = FAISS.from_documents(chunks, embeddings)
     current_dir = os.path.dirname(os.path.abspath(__file__))
     vectorstore.save_local(os.path.join(current_dir, "vectorstore_faiss"))
@@ -155,7 +155,7 @@ class RAGHelper:
     """Работа с векторным индексом и извлечение релевантных фрагментов."""
 
     def __init__(self):
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
         current_dir = os.path.dirname(os.path.abspath(__file__))
         vectorstore_path = os.path.join(current_dir, "vectorstore_faiss")
 
@@ -167,19 +167,53 @@ class RAGHelper:
 
     def _download_and_build_index(self) -> FAISS:
         s3 = S3Helper()
-        objects = s3.list_objects()
 
+        # Сначала проверяем, есть ли готовое векторное хранилище в S3
+        vectorstore_key = f"{S3_PREFIX}/vectorstore_faiss"
+        try:
+            send_to_logger("info", "Попытка загрузки готового векторного хранилища из S3...")
+
+            # Проверяем, есть ли файлы векторного хранилища
+            s3.client.head_object(Bucket=S3_BUCKET, Key=f"{vectorstore_key}/index.faiss")
+            s3.client.head_object(Bucket=S3_BUCKET, Key=f"{vectorstore_key}/index.pkl")
+
+            # Загружаем готовое хранилище
+            s3.client.download_file(S3_BUCKET, f"{vectorstore_key}/index.faiss", "/tmp/index.faiss")
+            s3.client.download_file(S3_BUCKET, f"{vectorstore_key}/index.pkl", "/tmp/index.pkl")
+
+            embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+            vectorstore = FAISS.load_local("/tmp", embeddings, allow_dangerous_deserialization=True)
+            send_to_logger("info", "Готовое векторное хранилище загружено из S3")
+            return vectorstore
+
+        except Exception as e:
+            send_to_logger("info", f"Готовое хранилище не найдено, создаем новое: {str(e)}")
+
+        # Если готового нет, создаем новое
+        objects = s3.list_objects()
         if "Contents" not in objects:
             send_to_logger("warning", "В S3 не найдено объектов, создается пустой индекс.")
             return self._build_empty_index()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             local_files = s3.download_files(objects, tmpdir)
-            return self._build_index_from_files(local_files)
+            vectorstore = self._build_index_from_files(local_files)
+
+            # Сохраняем готовое хранилище в S3 для будущего использования
+            try:
+                send_to_logger("info", "Сохраняем векторное хранилище в S3...")
+                vectorstore.save_local("/tmp/vectorstore_faiss")
+                s3.client.upload_file("/tmp/vectorstore_faiss/index.faiss", S3_BUCKET, f"{vectorstore_key}/index.faiss")
+                s3.client.upload_file("/tmp/vectorstore_faiss/index.pkl", S3_BUCKET, f"{vectorstore_key}/index.pkl")
+                send_to_logger("info", "Векторное хранилище сохранено в S3")
+            except Exception as e:
+                send_to_logger("warning", f"Не удалось сохранить в S3: {str(e)}")
+
+            return vectorstore
 
     def _build_empty_index(self) -> FAISS:
         """Создает пустое векторное хранилище с заглушкой"""
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
         docs = [Document(page_content="Нет доступных документов.")]
         return FAISS.from_documents(docs, embeddings)
 

@@ -51,7 +51,7 @@ class YandexGPTApi:
             response = requests.post(
                 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
                 json={'jwt': encoded_token},
-                timeout=10
+                timeout=30  # Увеличиваем timeout
             )
 
             if response.status_code != 200:
@@ -99,7 +99,7 @@ class YandexGPTApi:
                 "completionOptions": {
                     "stream": False,
                     "temperature": 0.6,
-                    "maxTokens": 2000
+                    "maxTokens": 1000  # Уменьшаем для ускорения
                 },
                 "messages": messages
             }
@@ -108,7 +108,7 @@ class YandexGPTApi:
                 'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
                 headers=headers,
                 json=data,
-                timeout=30
+                timeout=60  # Увеличиваем timeout для GPT API
             )
 
             if response.status_code != 200:
@@ -178,6 +178,15 @@ def main():
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8000))
     server_address = ('', port)
+
+    # Предварительно инициализируем IAM токен
+    try:
+        gpt_api = YandexGPTApi()
+        gpt_api.get_iam_token()
+        send_to_logger("info", "IAM token pre-initialized successfully")
+    except Exception as e:
+        send_to_logger("warning", f"Failed to pre-initialize IAM token: {str(e)}")
+
     httpd = HTTPServer(server_address, YandexGPTRequestHandler)
     send_to_logger("info", f"YandexGPT is running on port {port}")
     send_to_logger("info", "Health check: GET /health")
