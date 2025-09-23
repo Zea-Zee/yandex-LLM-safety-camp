@@ -80,10 +80,14 @@ class Moderator:
         }
 
         try:
-            response = requests.post(ORCHESTRATOR_ADDRESS + '/gpt_moderator', json=messages)
+            print('before orchestration query')
+            orchestrator = ORCHESTRATOR_ADDRESS + '/gpt_moderator'
+            print(orchestrator)
+            response = requests.post(orchestrator, json=messages)
+            print('after orchestration query')
             response.raise_for_status()
-            print(response.json())
-            return "true" in response.text
+            print('\n', response.json(), '\n')
+            return "true" in response.text or "True" in response.text
         except Exception as e:
             logger.error(f"Error contacting orchestrator: {str(e)}")
             return False
@@ -108,8 +112,10 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         query = self._retrieve_message()
+        print(query)
         if self.path != '/':
             return
+        print('checking safety')
         is_safe = self.moderator.check_question(**query)
         print(is_safe)
 
