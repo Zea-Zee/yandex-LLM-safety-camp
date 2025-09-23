@@ -1,10 +1,11 @@
 import json
 import logging
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(name)s - %(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,13 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             json_data = json.loads(post_data.decode('utf-8'))
         except Exception as e:
-            return 'error', f'Error parsing request: {str(e)}'
+            return 'error', f'Error parsing request: {str(e)}', 'unknown'  #-------
 
         message = json_data.get('message', 'Missing required field: message')
         level = json_data.get('level', f'Missing required field: level. Message: {message}')
+        name = json_data.get('name', f'Missing required field: name. Message: {message}')
 
-        return level, message
+        return level, message, name  #-------
 
     def do_POST(self):
         if self.path != '/':
@@ -39,21 +41,22 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
             self._send_json_response(response, 404)
             return
 
-        level, message = self._retrieve_message()
-        print(level, message)
+        level, message, name = self._retrieve_message()  #-------
+        sender_logger = logging.getLogger(name)  #-------
+        
         match level:
             case 'debug':
-                logger.debug(message)
+                sender_logger.debug(message)  #-------
             case 'info':
-                logger.info(message)
+                sender_logger.info(message)  #-------
             case 'warning':
-                logger.warning(message)
+                sender_logger.warning(message)  #-------
             case 'error':
-                logger.error(message)
+                sender_logger.error(message)  #-------
             case 'critical':
-                logger.critical(message)
+                sender_logger.critical(message)  #-------
             case _:
-                logger.error(f'Unknown log level "{level}". Message: {message}')
+                sender_logger.error(f'Unknown log level "{level}". Message: {message}')  #-------
                 level = 'error'
         response = {
             "status": "success",
@@ -64,6 +67,7 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    time.sleep(5)
     port = 8020
     server_address = ('', port)
     httpd = HTTPServer(server_address, LoggerRequestHandler)

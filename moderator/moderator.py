@@ -1,18 +1,11 @@
 import json
-import logging
 import re
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import requests
 
 from settings import ORCHESTRATOR_ADDRESS
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-logger = logging.getLogger(__name__)
 
 INJECTION_PATTERNS = [
     r"\byour instructions\b",
@@ -43,6 +36,18 @@ INJECTION_PATTERNS = [
 
 COMPILED_PATTERNS = [re.compile(pattern, re.IGNORECASE | re.UNICODE) for pattern in INJECTION_PATTERNS]
 
+def send_to_logger(level, message):
+    log_message = {
+        "name": "moderator",
+        "level": level,
+        "message": message
+    }
+    try:
+        orchestrator = ORCHESTRATOR_ADDRESS + '/log'
+        response = requests.post(orchestrator, json=log_message)
+    except Exception as e:
+        print(f"Error when send log: {str(e)}")
+        return False
 
 class Moderator:
     def _heuristic_filter(self, question):
@@ -80,16 +85,12 @@ class Moderator:
         }
 
         try:
-            print('before orchestration query')
             orchestrator = ORCHESTRATOR_ADDRESS + '/gpt_moderator'
-            print(orchestrator)
             response = requests.post(orchestrator, json=messages)
-            print('after orchestration query')
             response.raise_for_status()
-            print('\n', response.json(), '\n')
             return "true" in response.text or "True" in response.text
         except Exception as e:
-            logger.error(f"Error contacting orchestrator: {str(e)}")
+            send_to_logger("error", f"Error contacting orchestrator: {str(e)}")
             return False
 
 
@@ -112,22 +113,19 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         query = self._retrieve_message()
-        print(query)
         if self.path != '/':
             return
-        print('checking safety')
         is_safe = self.moderator.check_question(**query)
-        print(is_safe)
 
         self._send_json_response({'is_safe': is_safe})
 
 
 def main():
+    time.sleep(5)
     port = 8001
     server_address = ('', port)
     httpd = HTTPServer(server_address, ModeratorRequestHandler)
-    logger.info("Moderator is running on port 8001")
-
+    send_to_logger("info", "Moderator is running on port 8001")
     httpd.serve_forever()
 
 

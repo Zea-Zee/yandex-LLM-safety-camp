@@ -1,10 +1,11 @@
 import json
 import os
 import tempfile
-import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from io import BytesIO
 from typing import List, Dict
+import requests
+import time
 
 import boto3
 import PyPDF2
@@ -13,16 +14,20 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from settings import S3_BUCKET, S3_PREFIX, S3_SECRET_KEY, S3_ACCESS_KEY, S3_ENDPOINT
+from settings import S3_BUCKET, S3_PREFIX, S3_SECRET_KEY, S3_ACCESS_KEY, S3_ENDPOINT, ORCHESTRATOR_ADDRESS
 
-# ======================
-# Logging setup
-# ======================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+def send_to_logger(level, message):
+    log_message = {
+        "name": "rag",
+        "level": level,
+        "message": message
+    }
+    try:
+        orchestrator = ORCHESTRATOR_ADDRESS + '/log'
+        response = requests.post(orchestrator, json=log_message)
+    except Exception as e:
+        print(f"Error when send log: {str(e)}")
+        return False
 
 
 # ======================
@@ -39,7 +44,7 @@ def extract_text_from_pdf(pdf_file: BytesIO) -> str:
             if page_text:
                 text.append(page_text)
     except Exception as e:
-        logger.error("Ошибка при чтении PDF: %s", e)
+        send_to_logger("error", f"Ошибка при чтении PDF: {e}")
     return "\n".join(text)
 
 
@@ -56,12 +61,12 @@ def prepare_documents(local_files: List[str]) -> List[Document]:
                 content = f.read()
             if content.strip():
                 docs.append(Document(page_content=content))
-                logger.debug("Документ загружен: %s", path)
+                send_to_logger("debug", f"Документ загружен: {path}")
         except Exception as e:
-            logger.warning("Ошибка обработки документа %s: %s", path, e)
+            send_to_logger("warning", f"Ошибка обработки документа {path}: {e}")
 
     if not docs:
-        logger.info("Нет валидных документов, создается заглушка.")
+        send_to_logger("info", "Нет валидных документов, создается заглушка.")
         docs = [Document(page_content="Нет доступных документов.")]
     return docs
 
@@ -70,13 +75,13 @@ def build_vectorstore(docs: List[Document]) -> FAISS:
     """Создает FAISS-векторное хранилище из документов."""
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(docs)
-    logger.info("Создано %d чанков", len(chunks))
+    send_to_logger("info", f"Создано {len(chunks)} чанков")
 
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vectorstore = FAISS.from_documents(chunks, embeddings)
     current_dir = os.path.dirname(os.path.abspath(__file__))
     vectorstore.save_local(os.path.join(current_dir, "vectorstore_faiss"))
-    logger.info("Векторное хранилище сохранено локально.")
+    send_to_logger("info", "Векторное хранилище сохранено локально.")
     return vectorstore
 
 
@@ -95,14 +100,14 @@ class S3Helper:
             aws_secret_access_key=S3_SECRET_KEY,
             region_name="ru-central1",
         )
-        logger.info("S3 клиент инициализирован.")
+        send_to_logger("info", "S3 клиент инициализирован.")
 
     def list_objects(self) -> Dict:
         try:
-            logger.info("Получение списка объектов из S3...")
+            send_to_logger("info", "Получение списка объектов из S3...")
             return self.client.list_objects_v2(Bucket=S3_BUCKET, Prefix=S3_PREFIX)
         except Exception as e:
-            logger.error("Ошибка подключения к S3: %s", e)
+            send_to_logger("error", f"Ошибка подключения к S3: {e}")
             return {}
 
     def download_files(self, objects: Dict, tmpdir: str) -> List[str]:
@@ -119,7 +124,7 @@ class S3Helper:
 
             try:
                 if ext == ".pdf":
-                    logger.info("Загрузка PDF из S3: %s", key)
+                    send_to_logger("info", f"Загрузка PDF из S3: {key}")
                     response = self.client.get_object(Bucket=S3_BUCKET, Key=key)
                     pdf_data = response["Body"].read()
                     pdf_text = extract_text_from_pdf(BytesIO(pdf_data))
@@ -128,17 +133,17 @@ class S3Helper:
                         with open(txt_path, "w", encoding="utf-8") as f:
                             f.write(pdf_text)
                         local_files.append(txt_path)
-                        logger.debug("PDF сконвертирован в текст: %s", txt_path)
+                        send_to_logger("debug", f"PDF сконвертирован в текст: {txt_path}")
                 else:
-                    logger.info("Загрузка файла из S3: %s", key)
+                    send_to_logger("info", f"Загрузка файла из S3: {key}")
                     self.client.download_file(S3_BUCKET, key, local_path)
                     if os.path.getsize(local_path) > 0:
                         local_files.append(local_path)
-                        logger.debug("Файл загружен: %s", local_path)
+                        send_to_logger("debug", f"Файл загружен: {local_path}")
             except Exception as e:
-                logger.warning("Ошибка обработки %s: %s", key, e)
+                send_to_logger("warning", f"Ошибка обработки {key}: {e}")
 
-        logger.info("Загружено %d файлов из S3", len(local_files))
+        send_to_logger("info", f"Загружено {len(local_files)} файлов из S3")
         return local_files
 
 
@@ -155,17 +160,17 @@ class RAGHelper:
         vectorstore_path = os.path.join(current_dir, "vectorstore_faiss")
 
         # Всегда перестраиваем индекс при старте
-        logger.info("Инициализация векторного хранилища при старте сервера...")
+        send_to_logger("info", "Инициализация векторного хранилища при старте сервера...")
         self.vectorstore = self._download_and_build_index()
         self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 3})
-        logger.info("Векторное хранилище инициализировано и готово к работе")
+        send_to_logger("info", "Векторное хранилище инициализировано и готово к работе")
 
     def _download_and_build_index(self) -> FAISS:
         s3 = S3Helper()
         objects = s3.list_objects()
 
         if "Contents" not in objects:
-            logger.warning("В S3 не найдено объектов, создается пустой индекс.")
+            send_to_logger("warning", "В S3 не найдено объектов, создается пустой индекс.")
             return self._build_empty_index()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -184,9 +189,9 @@ class RAGHelper:
         return build_vectorstore(docs)
 
     def get_context_chunks(self, question: str) -> str:
-        logger.info("Запрос на поиск контекста: '%s'", question)
+        send_to_logger("info", f"Запрос на поиск контекста: '{question}'")
         docs = self.retriever.invoke(question)
-        logger.info("Найдено %d релевантных документов", len(docs))
+        send_to_logger("info", f"Найдено {len(docs)} релевантных документов")
         return "\n\n".join(doc.page_content for doc in docs)
 
 
@@ -217,22 +222,22 @@ class RAGRequestHandler(BaseHTTPRequestHandler):
             json_data = json.loads(post_data.decode("utf-8"))
             return json_data.get("question", "")
         except json.JSONDecodeError:
-            logger.warning("Получен некорректный JSON-запрос.")
+            send_to_logger("warning", "Получен некорректный JSON-запрос.")
             return ""
 
     def do_POST(self):
         question = self._retrieve_question()
         if not question.strip():
-            logger.warning("Пустой вопрос получен в POST-запросе.")
+            send_to_logger("warning", "Пустой вопрос получен в POST-запросе.")
             self._send_json_response({"error": "Вопрос не задан"}, status=400)
             return
 
         try:
             context_chunks = self.rag_helper.get_context_chunks(question)
-            logger.info("Ответ сформирован, длина контекста: %d символов", len(context_chunks))
+            send_to_logger("info", f"Ответ сформирован, длина контекста: {len(context_chunks)} символов")
             self._send_json_response({"context": context_chunks})
         except Exception as e:
-            logger.error("Ошибка при обработке запроса: %s", e)
+            send_to_logger("error", f"Ошибка при обработке запроса: {e}")
             self._send_json_response({"error": "Внутренняя ошибка сервера"}, status=500)
 
 
@@ -254,19 +259,20 @@ class RAGHTTPServer(HTTPServer):
 # ======================
 
 def main():
+    time.sleep(5)
     port = 8002
     server_address = ("", port)
 
     # Используем кастомный сервер с предварительной инициализацией
     httpd = RAGHTTPServer(server_address, RAGRequestHandler)
-    logger.info("Server running on http://localhost:%d", port)
+    send_to_logger("info", f"Server running on http://localhost:{port}")
 
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        logger.info("Сервер остановлен")
+        send_to_logger("info", "Сервер остановлен")
     except Exception as e:
-        logger.error("Ошибка при работе сервера: %s", e)
+        send_to_logger("error", f"Ошибка при работе сервера: {e}")
 
 
 if __name__ == "__main__":

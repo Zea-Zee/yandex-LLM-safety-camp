@@ -1,18 +1,18 @@
 import json
 import aiohttp
+import time
 from aiohttp import web
 
 from settings import ADDRESSES
 
 
-async def logger(level, message):
+async def logger(name, level, message):
     async with aiohttp.ClientSession() as session:
-        async with session.post(ADDRESSES['LOGGER_ADDRESS'], json={'level': level, 'message': message}) as response:
+        async with session.post(ADDRESSES['LOGGER_ADDRESS'], json={'name': name, 'level': level, 'message': message}) as response:
             return await response.json()
 
 
 async def _request_moderator(question):
-    print('asking moderator')
     async with aiohttp.ClientSession() as session:
         async with session.post(ADDRESSES['MODERATOR_ADDRESS'], json={'question': question}) as response:
             response.raise_for_status()
@@ -41,21 +41,16 @@ async def request_gpt(user, system=None):
 
 
 async def ask_gpt_pipeline(question):
-    print('/ask_gpt: ', question)
     is_safe = await _request_moderator(question)
-    print('is_safe: ', is_safe)
     if not is_safe:
         return {'gpt_answer': 'Ваш вопрос не прошел модерацию. Попробуйте по другому сформулировать вопрос.'}
-
-    print(is_safe)
 
     context = await _request_rag(question)
     gpt_response = await request_gpt(
         system=f"""
         Контекст: {context} 
         Используйте контекст, чтобы ответить на вопрос. 
-        Если контекст не соответствует вопросу, то не используйте его,
-        и ответь на вопрос так, как будто контекста не было.
+        Если контекст не соответствует вопросу, то не используйте его, и ответь на вопрос так, как будто контекста не было.
         Если Контекста не достаточно для полного ответа, то обязательно дополни ответ своими знаниями.""",
         user=question
     )
@@ -71,11 +66,9 @@ async def handle_post(request):
 
     match request.path:
         case '/ask_gpt':
-            print('/ask_gpt')
             gpt_answer = await ask_gpt_pipeline(**query)
             return web.json_response(gpt_answer)
         case '/gpt_moderator':
-            print('/gpt_moderator')
             gpt_answer = await request_gpt(**query)
             return web.json_response(gpt_answer)
         case '/log':
@@ -86,6 +79,7 @@ async def handle_post(request):
 
 
 def main():
+    time.sleep(5)
     port = 8003
 
     app = web.Application()
@@ -94,7 +88,7 @@ def main():
 
     import requests
     requests.post(ADDRESSES['LOGGER_ADDRESS'],
-                  json={'level': 'info', 'message': f"Orchestrator is running on port {port}"})
+                  json={'name': 'orchestrator', 'level': 'info', 'message': f"Orchestrator is running on port {port}"})
 
     web.run_app(app, host='', port=port)
 
