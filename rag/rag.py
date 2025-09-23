@@ -213,6 +213,13 @@ class RAGRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
+    def do_GET(self):
+        """Health check endpoint для serverless контейнера"""
+        if self.path == '/health':
+            self._send_json_response({"status": "healthy", "service": "rag"})
+        else:
+            self._send_json_response({"error": "not found"}, status=404)
+
     def _retrieve_question(self) -> str:
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
@@ -260,12 +267,14 @@ class RAGHTTPServer(HTTPServer):
 
 def main():
     time.sleep(5)
-    port = 8002
+    # Serverless контейнеры автоматически устанавливают переменную PORT
+    port = int(os.getenv('PORT', 8002))
     server_address = ("", port)
 
     # Используем кастомный сервер с предварительной инициализацией
     httpd = RAGHTTPServer(server_address, RAGRequestHandler)
-    send_to_logger("info", f"Server running on http://localhost:{port}")
+    send_to_logger("info", f"Server running on port {port}")
+    send_to_logger("info", "Health check: GET /health")
 
     try:
         httpd.serve_forever()

@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import requests
@@ -105,6 +106,13 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def do_GET(self):
+        """Health check endpoint для serverless контейнера"""
+        if self.path == '/health':
+            self._send_json_response({"status": "healthy", "service": "moderator"})
+        else:
+            self._send_json_response({"error": "not found"}, status=404)
+
     def _retrieve_message(self):
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
@@ -122,10 +130,12 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
 
 def main():
     time.sleep(5)
-    port = 8001
+    # Serverless контейнеры автоматически устанавливают переменную PORT
+    port = int(os.getenv('PORT', 8001))
     server_address = ('', port)
     httpd = HTTPServer(server_address, ModeratorRequestHandler)
-    send_to_logger("info", "Moderator is running on port 8001")
+    send_to_logger("info", f"Moderator is running on port {port}")
+    send_to_logger("info", "Health check: GET /health")
     httpd.serve_forever()
 
 

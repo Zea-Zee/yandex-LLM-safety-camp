@@ -1,9 +1,10 @@
 import time
+import os
 
 import jwt
 import requests
 
-from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, ORCHESTRATOR_ADDRESS
+from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, LOGGER_ADDRESS
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
@@ -15,8 +16,7 @@ def send_to_logger(level, message):
         "message": message
     }
     try:
-        orchestrator = ORCHESTRATOR_ADDRESS + '/log'
-        response = requests.post(orchestrator, json=log_message)
+        response = requests.post(LOGGER_ADDRESS, json=log_message)
     except Exception as e:
         print(f"Error when send log: {str(e)}")
         return False
@@ -125,12 +125,19 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server):
         self.yandex_gpt = YandexGPTApi()
         super().__init__(request, client_address, server)
-        
+
     def _send_json_response(self, data, status=200):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+    def do_GET(self):
+        """Health check endpoint для serverless контейнера"""
+        if self.path == '/health':
+            self._send_json_response({"status": "healthy", "service": "yandex_gpt"})
+        else:
+            self._send_json_response({"error": "not found"}, status=404)
 
     def _retrieve_message(self):
         content_length = int(self.headers.get('Content-Length', 0))
@@ -147,31 +154,34 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
             send_to_logger("error", "Failed to read or parse request body")
             self._send_json_response({"error": "invalid request body"}, status=400)
             return
-        
+
         try:
             gpt_answer = self.yandex_gpt.ask_gpt(json_data)
         except Exception as e:
             send_to_logger("error", "Moderator check_question failed")
             self._send_json_response({"error": "internal server error"}, status=500)
             return
-        
+
         response = {
             "gpt_answer": gpt_answer
         }
 
         try:
-            self._send_json_response(response) 
+            self._send_json_response(response)
         except Exception as e:
             send_to_logger("error", "Failed to send response")
             self._send_json_response({"error": "internal server error"}, status=500)
             return
-    
+
 def main():
     time.sleep(5)
-    server_adress = ('', 8000)
-    httpd = HTTPServer(server_adress, YandexGPTRequestHandler)
-    send_to_logger("info", "YandexGPT is running on port 8000")
-    
+    # Serverless контейнеры автоматически устанавливают переменную PORT
+    port = int(os.getenv('PORT', 8000))
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, YandexGPTRequestHandler)
+    send_to_logger("info", f"YandexGPT is running on port {port}")
+    send_to_logger("info", "Health check: GET /health")
+
     httpd.serve_forever()
 
 if __name__ == '__main__':

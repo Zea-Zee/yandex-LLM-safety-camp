@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 logging.basicConfig(
@@ -16,6 +17,13 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
+
+    def do_GET(self):
+        """Health check endpoint для serverless контейнера"""
+        if self.path == '/health':
+            self._send_json_response({"status": "healthy", "service": "logger"})
+        else:
+            self._send_json_response({"error": "not found"}, status=404)
 
     def _retrieve_message(self):
         try:
@@ -43,7 +51,7 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
 
         level, message, name = self._retrieve_message()  #-------
         sender_logger = logging.getLogger(name)  #-------
-        
+
         match level:
             case 'debug':
                 sender_logger.debug(message)  #-------
@@ -68,10 +76,12 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
 
 def main():
     time.sleep(5)
-    port = 8020
+    # Serverless контейнеры автоматически устанавливают переменную PORT
+    port = int(os.getenv('PORT', 8020))
     server_address = ('', port)
     httpd = HTTPServer(server_address, LoggerRequestHandler)
-    logger.info(f'Logger running on http://localhost:{port}')
+    logger.info(f'Logger running on port {port}')
+    logger.info('Health check: GET /health')
 
     try:
         httpd.serve_forever()

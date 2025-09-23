@@ -1,6 +1,7 @@
 import json
 import aiohttp
 import time
+import os
 from aiohttp import web
 
 from settings import ADDRESSES
@@ -48,8 +49,8 @@ async def ask_gpt_pipeline(question):
     context = await _request_rag(question)
     gpt_response = await request_gpt(
         system=f"""
-        Контекст: {context} 
-        Используйте контекст, чтобы ответить на вопрос. 
+        Контекст: {context}
+        Используйте контекст, чтобы ответить на вопрос.
         Если контекст не соответствует вопросу, то не используйте его, и ответь на вопрос так, как будто контекста не было.
         Если Контекста не достаточно для полного ответа, то обязательно дополни ответ своими знаниями.""",
         user=question
@@ -57,6 +58,13 @@ async def ask_gpt_pipeline(question):
 
     return gpt_response
 
+
+async def handle_get(request):
+    """Health check endpoint для serverless контейнера"""
+    if request.path == '/health':
+        return web.json_response({"status": "healthy", "service": "orchestrator"})
+    else:
+        return web.json_response({"error": "not found"}, status=404)
 
 async def handle_post(request):
     try:
@@ -80,15 +88,19 @@ async def handle_post(request):
 
 def main():
     time.sleep(5)
-    port = 8003
+    # Serverless контейнеры автоматически устанавливают переменную PORT
+    port = int(os.getenv('PORT', 8003))
 
     app = web.Application()
+    app.router.add_get('/health', handle_get)
     app.router.add_post('/', handle_post)
     app.router.add_post('/{path:.*}', handle_post)
 
     import requests
     requests.post(ADDRESSES['LOGGER_ADDRESS'],
                   json={'name': 'orchestrator', 'level': 'info', 'message': f"Orchestrator is running on port {port}"})
+    requests.post(ADDRESSES['LOGGER_ADDRESS'],
+                  json={'name': 'orchestrator', 'level': 'info', 'message': "Health check: GET /health"})
 
     web.run_app(app, host='', port=port)
 
