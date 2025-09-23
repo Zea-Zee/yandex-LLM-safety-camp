@@ -9,6 +9,7 @@ from telegram.ext import (
 )
 
 from settings import TELEGRAM_TOKEN, ORCHESTRATOR_ADDRESS
+import os
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -166,14 +167,15 @@ def main():
         application.initialize()
 
         # Создаем HTTP сервер
-        # Serverless контейнеры слушают на порту 8080
-        server_address = ('', 8080)
+        # Serverless контейнеры автоматически устанавливают переменную PORT
+        port = int(os.getenv('PORT', 8080))
+        server_address = ('', port)
         httpd = HTTPServer(server_address, BotRequestHandler)
 
         # Передаем application в handler
         BotRequestHandler.bot_application = application
 
-        logger.info("Бот запускается на порту 8080...")
+        logger.info(f"Бот запускается на порту {port}...")
         logger.info("Health check: GET /health")
         logger.info("Webhook: POST /webhook")
 
