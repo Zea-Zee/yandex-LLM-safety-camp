@@ -38,6 +38,7 @@ sudo docker build -t yandex_gpt-image ./yandex_gpt
 # 4. Останавливаем старые контейнеры (если есть)
 # -------------------------
 echo "Stopping old containers..."
+
 #sudo docker rm -f bot moderator orchestrator rag yandex_gpt 2>/dev/null || true
 sudo docker rm -f bot moderator orchestrator rag yandex_gpt logger
 
@@ -47,6 +48,7 @@ sudo docker rm -f bot moderator orchestrator rag yandex_gpt logger
 echo "Running containers..."
 
 # Запускаем сервисы в правильном порядке (сначала зависимости)
+
 sudo docker run -d --name logger --network microservices-network -p 8020:8020 logger-image
 sudo docker run -d --name orchestrator --network microservices-network -p 8003:8003 --env-file ./orchestrator/.env orchestrator-image
 sudo docker run -d --name yandex_gpt --network microservices-network -p 8000:8000 --env-file ./yandex_gpt/.env yandex_gpt-image
