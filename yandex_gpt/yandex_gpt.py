@@ -62,7 +62,7 @@ class YandexGPTApi:
         except Exception as e:
             logger.error(f"Error generating IAM token: {str(e)}")
             raise
-    
+
     def transform_messages(self, input_dict):
         result = []
         if 'system' in input_dict['message']:
@@ -72,7 +72,7 @@ class YandexGPTApi:
             })
         if 'user' in input_dict['message']:
             result.append({
-                "role": "user", 
+                "role": "user",
                 "text": input_dict['message']['user']
             })
         return result
@@ -120,7 +120,7 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server):
         self.yandex_gpt = YandexGPTApi()
         super().__init__(request, client_address, server)
-        
+
     def _send_json_response(self, data, status=200):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
@@ -136,30 +136,30 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
             logger.exception("Failed to read or parse request body")
             self._send_json_response({"error": "invalid request body"}, status=400)
             return None
-        
+
         try:
             gpt_answer = self.yandex_gpt.ask_gpt(json_data) #(json_data['messages'])
         except Exception as e:
             logger.exception("Moderator check_question failed")
             self._send_json_response({"error": "internal server error"}, status=500)
             return None
-        
+
         response = {
             "gpt_answer": gpt_answer
         }
 
         try:
-            self._send_json_response(response) 
+            self._send_json_response(response)
         except Exception as e:
             logger.exception("Failed to send response")
             self._send_json_response({"error": "internal server error"}, status=500)
             return None
-    
+
 def main():
     server_adress = ('', 8000)
     httpd = HTTPServer(server_adress, YandexGPTRequestHandler)
     logger.info("YandexGPT is running on port 8000")
-    
+
     httpd.serve_forever()
 
 if __name__ == '__main__':

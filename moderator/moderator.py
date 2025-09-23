@@ -48,19 +48,19 @@ class Moderator:
                 }
             }
         except Exception as e:
-            logger.error(f"""Ошибка в формате сообщения, 
+            logger.error(f"""Ошибка в формате сообщения,
                              правильный формат:
-                             {{"system": "system message (не обязателен)", "user": "user message (обязателен)"}} 
+                             {{"system": "system message (не обязателен)", "user": "user message (обязателен)"}}
                              Ошибка: {str(e)}""")
             return None
 
         try:
             response = requests.post(YANDEXGPT_ADDRESS, json=data)
             response.raise_for_status()  # Проверяем на ошибки HTTP
-            
+
             result = response.json()
             return result["gpt_answer"]
-            
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Ошибка при запросе к серверу: {e}")
             return None
@@ -105,7 +105,7 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server):
         self.moderator = Moderator()
         super().__init__(request, client_address, server)
-        
+
     def _send_json_response(self, data, status=200):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
@@ -121,7 +121,7 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
             logger.exception("Failed to read or parse request body")
             self._send_json_response({"error": "invalid request body"}, status=400)
             return None
-        
+
         if "question" not in json_data:
             logger.exception("Missing 'question' field in request JSON")
             self._send_json_response({"error": "missing 'question' field"}, status=400)
@@ -133,7 +133,7 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
             logger.exception("Moderator check_question failed")
             self._send_json_response({"error": "internal server error"}, status=500)
             return None
-        
+
         response = {
             "is_safe": is_safe
         }
@@ -149,7 +149,7 @@ def main():
     server_adress = ('', 8001)
     httpd = HTTPServer(server_adress, ModeratorRequestHandler)
     logger.info("Moderator is running on port 8001")
-    
+
     httpd.serve_forever()
 
 if __name__ == '__main__':

@@ -1,10 +1,12 @@
 import logging
-import time
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import jwt
 import requests
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application, CommandHandler, ContextTypes, MessageHandler, filters
+)
 
 from settings import TELEGRAM_TOKEN, ORCHESTRATOR_ADDRESS
 
@@ -34,7 +36,7 @@ class TelegramBot:
             return None
 
         return gpt_answer
-    
+
 
 yandex_bot = TelegramBot()
 
@@ -43,7 +45,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Обработчик команды /start
     """
-    
+
     await update.message.reply_text(
         "Привет! Я бот для работы с Yandex GPT. Просто напиши мне свой вопрос"
     )
@@ -84,17 +86,98 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+class BotRequestHandler(BaseHTTPRequestHandler):
+    def __init__(self, request, client_address, server):
+        self.bot_application = None
+        super().__init__(request, client_address, server)
+
+    def _send_json_response(self, data, status=200):
+        self.send_response(status)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def do_GET(self):
+        """Health check endpoint"""
+        if self.path == '/health':
+            self._send_json_response({"status": "healthy", "service": "bot"})
+        else:
+            self._send_json_response({"error": "not found"}, status=404)
+
+    def do_POST(self):
+        """Webhook endpoint для Telegram"""
+        if self.path == '/webhook':
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                post_data = self.rfile.read(content_length)
+                update_data = json.loads(post_data.decode('utf-8'))
+
+                # Создаем Update объект из данных webhook
+                update = Update.de_json(
+                    update_data, self.bot_application.bot
+                )
+
+                # Обрабатываем update асинхронно
+                import asyncio
+                asyncio.create_task(self._process_update(update))
+
+                self._send_json_response({"status": "ok"})
+
+            except Exception as e:
+                logger.error(f"Error processing webhook: {str(e)}")
+                self._send_json_response(
+                    {"error": "internal server error"}, status=500
+                )
+        else:
+            self._send_json_response({"error": "not found"}, status=404)
+
+    async def _process_update(self, update: Update):
+        """Обработка update от Telegram"""
+        try:
+            if update.message:
+                if (update.message.text and
+                        update.message.text.startswith('/start')):
+                    await start(update, None)
+                elif update.message.text:
+                    await handle_message(update, None)
+        except Exception as e:
+            logger.error(f"Error processing update: {str(e)}")
+            await error_handler(update, None)
+
+    def log_message(self, format, *args):
+        """Отключаем стандартное логирование HTTP запросов"""
+        pass
+
+
 def main():
     """Основная функция"""
     try:
+        # Создаем приложение для обработки сообщений
         application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+        # Добавляем обработчики
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+        )
         application.add_error_handler(error_handler)
 
-        logger.info("Бот запускается...")
-        application.run_polling()
+        # Инициализируем бота
+        application.initialize()
+
+        # Создаем HTTP сервер
+        # Serverless контейнеры слушают на порту 8080
+        server_address = ('', 8080)
+        httpd = HTTPServer(server_address, BotRequestHandler)
+
+        # Передаем application в handler
+        BotRequestHandler.bot_application = application
+
+        logger.info("Бот запускается на порту 8080...")
+        logger.info("Health check: GET /health")
+        logger.info("Webhook: POST /webhook")
+
+        httpd.serve_forever()
 
     except Exception as e:
         logger.error(f"Failed to start bot: {str(e)}")

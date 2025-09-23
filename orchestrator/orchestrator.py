@@ -31,18 +31,18 @@ class Orchestrator:
                 }
             }
         except Exception as e:
-            logger.error("""Ошибка в формате сообщения, 
+            logger.error("""Ошибка в формате сообщения,
                              правильный формат:
-                             {{"system": "system message (не обязателен)", "user": "user message (обязателен)"}} 
+                             {{"system": "system message (не обязателен)", "user": "user message (обязателен)"}}
                              Ошибка: {str(e)}""")
-        
+
         return data
 
     def check_message(self, question):
         """
         Отправка запроса модератору, проверка сообщения на безопасность.
         """
-        
+
         data_moderator = {
             "question": question
         }
@@ -56,12 +56,12 @@ class Orchestrator:
             return None
 
         return is_safe
-    
+
     def rag_request(self, question):
         """
         отправка запроса RAG, получения контекста.
         """
-        
+
         data_rag = {
             "question": question
         }
@@ -75,7 +75,7 @@ class Orchestrator:
             return None
 
         return context
-    
+
     def gpt_request(self, messages):
         """
         Отправка запроса в GPT.
@@ -92,7 +92,7 @@ class Orchestrator:
             return None
 
         return gpt_answer
-    
+
     def request_processing(self, question):
         """
         Обработка запроса пользователя.
@@ -104,10 +104,10 @@ class Orchestrator:
             return result
 
         context = self.rag_request(question)
-        question_w_context = {"system": f"""Контекст: {context} 
-                                            \nИспользуйте контекст, чтобы ответить на вопрос. 
+        question_w_context = {"system": f"""Контекст: {context}
+                                            \nИспользуйте контекст, чтобы ответить на вопрос.
                                             Если контекст не соответствует вопросу, то не используйте его, и ответь на вопрос так, как будто контекста не было.
-                                            Если Контекста не достаточно для полного ответа, то обязательно дополни ответ своими знаниями.""", 
+                                            Если Контекста не достаточно для полного ответа, то обязательно дополни ответ своими знаниями.""",
                               "user": question}
         gpt_final_answer = self.gpt_request(question_w_context)
 
@@ -117,7 +117,7 @@ class OrchestratorRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server):
         self.orchestrator = Orchestrator()
         super().__init__(request, client_address, server)
-        
+
     def _send_json_response(self, data, status=200):
         self.send_response(status)
         self.send_header('Content-type', 'application/json')
@@ -133,19 +133,19 @@ class OrchestratorRequestHandler(BaseHTTPRequestHandler):
             logger.exception("Failed to read or parse request body")
             self._send_json_response({"error": "invalid request body"}, status=400)
             return None
-        
+
         if "question" not in json_data:
             logger.exception("Missing 'question' field in request JSON")
             self._send_json_response({"error": "missing 'question' field"}, status=400)
             return None
-    
-        try:            
+
+        try:
             gpt_answer = self.orchestrator.request_processing(json_data['question']) #(json_data['messages'])
         except Exception as e:
             logger.exception("Moderator check_question failed")
             self._send_json_response({"error": "internal server error"}, status=500)
             return None
-        
+
         response = {
             "gpt_answer": gpt_answer
         }
@@ -156,12 +156,12 @@ class OrchestratorRequestHandler(BaseHTTPRequestHandler):
             logger.exception("Failed to send response")
             self._send_json_response({"error": "internal server error"}, status=500)
             return None
-        
+
 def main():
     server_adress = ('', 8003)
     httpd = HTTPServer(server_adress, OrchestratorRequestHandler)
     logger.info("Orchestrator is running on port 8003")
-    
+
     httpd.serve_forever()
 
 if __name__ == '__main__':

@@ -6,6 +6,6 @@ COPY . ./moderator
 
 WORKDIR /app/moderator
 
-EXPOSE 8001 
+EXPOSE 8001
 
 CMD ["python", "moderator.py"]
