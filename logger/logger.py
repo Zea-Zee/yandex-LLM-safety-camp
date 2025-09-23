@@ -40,15 +40,7 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
         return level, message, name  #-------
 
     def do_POST(self):
-        if self.path != '/':
-            logger.error("Endpoint not found. Use /")
-            response = {
-                "status": "error",
-                "message": "Endpoint not found. Use /"
-            }
-            self._send_json_response(response, 404)
-            return
-
+        # Принимаем POST запросы на любой путь
         level, message, name = self._retrieve_message()  #-------
         sender_logger = logging.getLogger(name)  #-------
 

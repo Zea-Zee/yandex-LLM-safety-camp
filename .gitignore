@@ -4,3 +4,4 @@
 *.venv/
 *.idea/
 *.pem
+*test_*.sh

@@ -60,9 +60,82 @@ async def ask_gpt_pipeline(question):
 
 
 async def handle_get(request):
-    """Health check endpoint для serverless контейнера"""
+    """Health check и диагностические endpoints для serverless контейнера"""
     if request.path == '/health':
         return web.json_response({"status": "healthy", "service": "orchestrator"})
+    elif request.path == '/check-connections':
+        # Диагностический endpoint для проверки связей с другими сервисами
+        results = {}
+
+        # Проверяем Logger
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ADDRESSES['LOGGER_ADDRESS'] + '/health') as response:
+                    results['logger'] = {
+                        'url': ADDRESSES['LOGGER_ADDRESS'],
+                        'status': 'ok' if response.status == 200 else 'error',
+                        'status_code': response.status
+                    }
+        except Exception as e:
+            results['logger'] = {
+                'url': ADDRESSES['LOGGER_ADDRESS'],
+                'status': 'error',
+                'error': str(e)
+            }
+
+        # Проверяем Moderator
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ADDRESSES['MODERATOR_ADDRESS'] + '/health') as response:
+                    results['moderator'] = {
+                        'url': ADDRESSES['MODERATOR_ADDRESS'],
+                        'status': 'ok' if response.status == 200 else 'error',
+                        'status_code': response.status
+                    }
+        except Exception as e:
+            results['moderator'] = {
+                'url': ADDRESSES['MODERATOR_ADDRESS'],
+                'status': 'error',
+                'error': str(e)
+            }
+
+        # Проверяем Yandex GPT
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ADDRESSES['YANDEX_GPT_ADDRESS'] + '/health') as response:
+                    results['yandex_gpt'] = {
+                        'url': ADDRESSES['YANDEX_GPT_ADDRESS'],
+                        'status': 'ok' if response.status == 200 else 'error',
+                        'status_code': response.status
+                    }
+        except Exception as e:
+            results['yandex_gpt'] = {
+                'url': ADDRESSES['YANDEX_GPT_ADDRESS'],
+                'status': 'error',
+                'error': str(e)
+            }
+
+        # Проверяем RAG
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ADDRESSES['RAG_ADDRESS'] + '/health') as response:
+                    results['rag'] = {
+                        'url': ADDRESSES['RAG_ADDRESS'],
+                        'status': 'ok' if response.status == 200 else 'error',
+                        'status_code': response.status
+                    }
+        except Exception as e:
+            results['rag'] = {
+                'url': ADDRESSES['RAG_ADDRESS'],
+                'status': 'error',
+                'error': str(e)
+            }
+
+        return web.json_response({
+            "status": "diagnostic_complete",
+            "service": "orchestrator",
+            "connections": results
+        })
     else:
         return web.json_response({"error": "not found"}, status=404)
 
@@ -93,6 +166,7 @@ def main():
 
     app = web.Application()
     app.router.add_get('/health', handle_get)
+    app.router.add_get('/check-connections', handle_get)
     app.router.add_post('/', handle_post)
     app.router.add_post('/{path:.*}', handle_post)
 
