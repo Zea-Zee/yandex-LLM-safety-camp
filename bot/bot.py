@@ -5,7 +5,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 from telegram import Update
 from telegram.ext import (
-    Application, CommandHandler, ContextTypes, MessageHandler, filters
+    Application, CommandHandler, MessageHandler, filters
 )
 
 from settings import TELEGRAM_TOKEN, ORCHESTRATOR_ADDRESS
@@ -42,49 +42,63 @@ class TelegramBot:
 yandex_bot = TelegramBot()
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context):
     """
     Обработчик команды /start
     """
-
-    await update.message.reply_text(
-        "Привет! Я бот для работы с Yandex GPT. Просто напиши мне свой вопрос"
-    )
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений"""
-    user_message = update.message.text
-
-    if not user_message.strip():
-        await update.message.reply_text("Пожалуйста, введите вопрос")
-        return
-
     try:
+        await update.message.reply_text(
+            "Привет! Я бот для работы с Yandex GPT. "
+            "Просто напиши мне свой вопрос"
+        )
+    except Exception as e:
+        logger.error(f"Error in start handler: {str(e)}")
+
+
+async def handle_message(update: Update, context):
+    """Обработка текстовых сообщений"""
+    try:
+        user_message = update.message.text
+
+        if not user_message.strip():
+            await update.message.reply_text("Пожалуйста, введите вопрос")
+            return
+
         # Показываем статус "печатает"
-        await context.bot.send_chat_action(
+        await bot_application.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing"
         )
 
         response = yandex_bot.ask_gpt(user_message)
-        await update.message.reply_text(response)
+        if response:
+            await update.message.reply_text(response)
+        else:
+            await update.message.reply_text(
+                "Извините, не удалось получить ответ. Попробуйте позже."
+            )
 
     except Exception as e:
         logger.error(f"Error handling message: {str(e)}")
-        await update.message.reply_text(
-            "Извините, произошла ошибка при обработке вашего запроса. "
-            "Пожалуйста, попробуйте позже."
-        )
+        try:
+            await update.message.reply_text(
+                "Извините, произошла ошибка при обработке вашего запроса. "
+                "Пожалуйста, попробуйте позже."
+            )
+        except Exception as reply_error:
+            logger.error(f"Error sending error message: {str(reply_error)}")
 
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def error_handler(update: Update, context):
     """Обработчик ошибок"""
-    logger.error(f"Update {update} caused error {context.error}")
-    if update and update.effective_message:
-        await update.effective_message.reply_text(
-            "Произошла ошибка. Пожалуйста, попробуйте позже."
-        )
+    try:
+        logger.error(f"Update {update} caused error {context}")
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "Произошла ошибка. Пожалуйста, попробуйте позже."
+            )
+    except Exception as e:
+        logger.error(f"Error in error handler: {str(e)}")
 
 
 class BotRequestHandler(BaseHTTPRequestHandler):
@@ -115,9 +129,16 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                 # Создаем Update объект из данных webhook
                 update = Update.de_json(update_data, bot_application.bot)
 
-                # Обрабатываем update асинхронно
+                # Обрабатываем update синхронно
                 import asyncio
-                asyncio.create_task(self._process_update(update))
+                try:
+                    # Создаем новый event loop для обработки
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(self._process_update(update))
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"Error in event loop: {str(e)}")
 
                 self._send_json_response({"status": "ok"})
 
@@ -132,7 +153,7 @@ class BotRequestHandler(BaseHTTPRequestHandler):
     async def _process_update(self, update: Update):
         """Обработка update от Telegram"""
         try:
-            if update.message:
+            if update and update.message:
                 if (update.message.text and
                         update.message.text.startswith('/start')):
                     await start(update, None)
@@ -140,7 +161,11 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                     await handle_message(update, None)
         except Exception as e:
             logger.error(f"Error processing update: {str(e)}")
-            await error_handler(update, None)
+            if update:
+                try:
+                    await error_handler(update, None)
+                except Exception as handler_error:
+                    logger.error(f"Error in error handler: {str(handler_error)}")
 
     def log_message(self, format, *args):
         """Отключаем стандартное логирование HTTP запросов"""
