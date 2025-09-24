@@ -1,9 +1,8 @@
 import time
-import json
 import os
 import asyncio
 import aiohttp
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from aiohttp import web
 
 from telegram import Update
 from telegram.ext import (
@@ -163,139 +162,114 @@ async def error_handler(update: Update, context):
         )
 
 
-class BotRequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, server):
-        super().__init__(request, client_address, server)
-
-    def _send_json_response(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
-
-    def do_GET(self):
-        """Health check endpoint для serverless контейнера"""
-        if self.path == '/health':
-            self._send_json_response({"status": "healthy", "service": "bot"})
-        else:
-            self._send_json_response({"error": "not found"}, status=404)
-
-    def do_POST(self):
-        """Webhook endpoint для Telegram"""
-        if self.path == '/webhook':
-            try:
-                content_length = int(self.headers.get('Content-Length', 0))
-                post_data = self.rfile.read(content_length)
-                update_data = json.loads(post_data.decode('utf-8'))
-
-                # Создаем Update объект из данных webhook
-                update = Update.de_json(update_data, bot_application.bot)
-
-                # Обрабатываем update асинхронно
-                import asyncio
-                try:
-                    # Создаем новый event loop для обработки
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(self._process_update(update))
-                    finally:
-                        try:
-                            loop.close()
-                        except Exception:
-                            pass
-                except Exception as e:
-                    print(f"Error in event loop: {str(e)}")
-
-                self._send_json_response({"status": "ok"})
-
-            except Exception as e:
-                print(f"Error processing webhook: {str(e)}")
-                self._send_json_response(
-                    {"error": "internal server error"}, status=500
-                )
-        else:
-            self._send_json_response({"error": "not found"}, status=404)
-
-    async def _process_update(self, update: Update):
-        """Обработка update от Telegram"""
-        try:
-            await send_to_logger(
-                "info", f"Processing update: {update.update_id}"
-            )
-            if update and update.message:
-                await send_to_logger(
-                    "info",
-                    f"Message from user {update.message.from_user.id}: "
-                    f"{update.message.text}"
-                )
-                if (update.message.text and
-                        update.message.text.startswith('/start')):
-                    await send_to_logger("info", "Processing /start command")
-                    await start(update, None)
-                elif update.message.text:
-                    await send_to_logger(
-                        "info",
-                        f"Processing text message: "
-                        f"{update.message.text[:100]}..."
-                    )
-                    await handle_message(update, None)
-            else:
-                await send_to_logger(
-                    "warning", f"Update without message: {update}"
-                )
-        except Exception as e:
-            await send_to_logger(
-                "error", f"Error processing update: {str(e)}"
-            )
-            if update:
-                try:
-                    await error_handler(update, None)
-                except Exception as handler_error:
-                    await send_to_logger(
-                        "error",
-                        f"Error in error handler: {str(handler_error)}"
-                    )
-
-    def log_message(self, format, *args):
-        """Отключаем стандартное логирование HTTP запросов"""
-        pass
-
-
 # Глобальная переменная для application
 bot_application = None
 
 
-def main():
-    """Основная функция"""
+async def handle_health(request):
+    """Health check endpoint"""
+    return web.json_response({"status": "healthy", "service": "bot"})
+
+async def handle_webhook(request):
+    """Webhook endpoint для Telegram"""
+    try:
+        update_data = await request.json()
+
+        # Создаем Update объект из данных webhook
+        update = Update.de_json(update_data, bot_application.bot)
+
+        # Обрабатываем update
+        await process_update(update)
+
+        return web.json_response({"status": "ok"})
+
+    except Exception as e:
+        print(f"Error processing webhook: {str(e)}")
+        return web.json_response(
+            {"error": "internal server error"}, status=500
+        )
+
+async def process_update(update: Update):
+    """Обработка update от Telegram"""
+    try:
+        await send_to_logger(
+            "info", f"Processing update: {update.update_id}"
+        )
+        if update and update.message:
+            await send_to_logger(
+                "info",
+                f"Message from user {update.message.from_user.id}: "
+                f"{update.message.text}"
+            )
+            if (update.message.text and
+                    update.message.text.startswith('/start')):
+                await send_to_logger("info", "Processing /start command")
+                await start(update, None)
+            elif update.message.text:
+                await send_to_logger(
+                    "info",
+                    f"Processing text message: "
+                    f"{update.message.text[:100]}..."
+                )
+                await handle_message(update, None)
+        else:
+            await send_to_logger(
+                "warning", f"Update without message: {update}"
+            )
+    except Exception as e:
+        await send_to_logger(
+            "error", f"Error processing update: {str(e)}"
+        )
+        if update:
+            try:
+                await error_handler(update, None)
+            except Exception as handler_error:
+                await send_to_logger(
+                    "error",
+                    f"Error in error handler: {str(handler_error)}"
+                )
+
+
+async def init_bot():
+    """Инициализация бота"""
     global bot_application
 
+    # Создаем приложение для обработки сообщений
+    bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Добавляем обработчики
+    bot_application.add_handler(CommandHandler("start", start))
+    bot_application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+    bot_application.add_error_handler(error_handler)
+
+    # Инициализируем бота
+    await bot_application.initialize()
+
+
+def main():
+    """Основная функция"""
     try:
-        # Создаем приложение для обработки сообщений
-        bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
+        # Создаем aiohttp приложение
+        app = web.Application()
 
-        # Добавляем обработчики
-        bot_application.add_handler(CommandHandler("start", start))
-        bot_application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-        )
-        bot_application.add_error_handler(error_handler)
+        # Добавляем роуты
+        app.router.add_get('/health', handle_health)
+        app.router.add_post('/webhook', handle_webhook)
 
-        # Инициализируем бота асинхронно
-        import asyncio
-        asyncio.run(bot_application.initialize())
+        # Инициализируем бота
+        asyncio.run(init_bot())
 
-        # Создаем HTTP сервер
         # Serverless контейнеры автоматически устанавливают переменную PORT
         port = int(os.getenv('PORT', 8080))
-        server_address = ('', port)
-        httpd = HTTPServer(server_address, BotRequestHandler)
 
         print(f"Бот запускается на порту {port}...")
         print("Health check: GET /health")
         print("Webhook: POST /webhook")
 
-        httpd.serve_forever()
+        # Запускаем сервер
+        web.run_app(app, host='0.0.0.0', port=port)
 
     except Exception as e:
         print(f"Failed to start bot: {str(e)}")
