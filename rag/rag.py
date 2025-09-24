@@ -23,11 +23,9 @@ def send_to_logger(level, message):
         "message": message
     }
     try:
-        print(f"DEBUG: ORCHESTRATOR_ADDRESS = {ORCHESTRATOR_ADDRESS}")
         # Убираем лишние слеши
         base_url = ORCHESTRATOR_ADDRESS.rstrip('/')
         orchestrator = base_url + '/log'
-        print(f"ORCHESTRATOR_ADDRESS + /log = {orchestrator}")
         response = requests.post(orchestrator, json=log_message)
     except Exception as e:
         print(f"Error when send log: {str(e)}")
