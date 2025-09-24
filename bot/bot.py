@@ -38,7 +38,8 @@ class TelegramBot:
         try:
             await send_to_logger(
                 "info",
-                f"Sending request to orchestrator: {ORCHESTRATOR_ADDRESS}/ask_gpt"
+                f"Sending request to orchestrator: "
+                f"{ORCHESTRATOR_ADDRESS}/ask_gpt"
             )
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -51,7 +52,8 @@ class TelegramBot:
                     gpt_answer = data['gpt_answer']
                     await send_to_logger(
                         "info",
-                        f"Got response from orchestrator: {len(gpt_answer)} chars"
+                        f"Got response from orchestrator: "
+                        f"{len(gpt_answer)} chars"
                     )
         except asyncio.TimeoutError:
             await send_to_logger("error", "Orchestrator request timeout")
@@ -111,7 +113,9 @@ async def handle_message(update: Update, context):
         try:
             response = await yandex_bot.ask_gpt(user_message)
         except Exception as gpt_error:
-            await send_to_logger("error", f"Error in GPT call: {str(gpt_error)}")
+            await send_to_logger(
+                "error", f"Error in GPT call: {str(gpt_error)}"
+            )
             response = None
 
         end_time = time.time()
@@ -198,8 +202,8 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                     finally:
                         try:
                             loop.close()
-                    except Exception:
-                        pass
+                        except Exception:
+                            pass
                 except Exception as e:
                     print(f"Error in event loop: {str(e)}")
 
@@ -222,7 +226,8 @@ class BotRequestHandler(BaseHTTPRequestHandler):
             if update and update.message:
                 await send_to_logger(
                     "info",
-                    f"Message from user {update.message.from_user.id}: {update.message.text}"
+                    f"Message from user {update.message.from_user.id}: "
+                    f"{update.message.text}"
                 )
                 if (update.message.text and
                         update.message.text.startswith('/start')):
@@ -231,7 +236,8 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                 elif update.message.text:
                     await send_to_logger(
                         "info",
-                        f"Processing text message: {update.message.text[:100]}..."
+                        f"Processing text message: "
+                        f"{update.message.text[:100]}..."
                     )
                     await handle_message(update, None)
             else:
@@ -247,7 +253,8 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                     await error_handler(update, None)
                 except Exception as handler_error:
                     await send_to_logger(
-                        "error", f"Error in error handler: {str(handler_error)}"
+                        "error",
+                        f"Error in error handler: {str(handler_error)}"
                     )
 
     def log_message(self, format, *args):
