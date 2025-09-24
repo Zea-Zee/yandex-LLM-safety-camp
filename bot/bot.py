@@ -30,11 +30,26 @@ class TelegramBot:
         query = {"question": question}
 
         try:
-            response = requests.post(ORCHESTRATOR_ADDRESS + '/ask_gpt', json=query)
+            send_to_logger("info", f"Sending request to orchestrator: {ORCHESTRATOR_ADDRESS}/ask_gpt")
+            response = requests.post(
+                ORCHESTRATOR_ADDRESS + '/ask_gpt',
+                json=query,
+                timeout=120  # Увеличиваем timeout
+            )
             response.raise_for_status()
             gpt_answer = response.json()['gpt_answer']
+            send_to_logger("info", f"Got response from orchestrator: {len(gpt_answer)} chars")
+        except requests.exceptions.Timeout:
+            send_to_logger("error", "Orchestrator request timeout")
+            return None
+        except requests.exceptions.ConnectionError:
+            send_to_logger("error", "Cannot connect to orchestrator")
+            return None
         except requests.exceptions.RequestException as e:
             send_to_logger("error", f"Ошибка при запросе к серверу: {e}")
+            return None
+        except Exception as e:
+            send_to_logger("error", f"Unexpected error: {e}")
             return None
 
         return gpt_answer
@@ -79,6 +94,18 @@ async def handle_message(update: Update, context):
 
         try:
             response = yandex_bot.ask_gpt(user_message)
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                send_to_logger("error", "Event loop closed, retrying...")
+                # Попробуем еще раз
+                try:
+                    response = yandex_bot.ask_gpt(user_message)
+                except Exception as retry_error:
+                    send_to_logger("error", f"Retry failed: {str(retry_error)}")
+                    response = None
+            else:
+                send_to_logger("error", f"Runtime error: {str(e)}")
+                response = None
         except Exception as gpt_error:
             send_to_logger("error", f"Error in GPT call: {str(gpt_error)}")
             response = None
