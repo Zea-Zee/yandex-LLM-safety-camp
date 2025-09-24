@@ -92,23 +92,36 @@ async def handle_message(update: Update, context):
         send_to_logger("info", "Calling GPT service")
         start_time = time.time()
 
+        # Создаем новый event loop для синхронного вызова
+        import asyncio
+        loop = None
         try:
-            response = yandex_bot.ask_gpt(user_message)
-        except RuntimeError as e:
-            if "Event loop is closed" in str(e):
-                send_to_logger("error", "Event loop closed, retrying...")
-                # Попробуем еще раз
-                try:
-                    response = yandex_bot.ask_gpt(user_message)
-                except Exception as retry_error:
-                    send_to_logger("error", f"Retry failed: {str(retry_error)}")
-                    response = None
-            else:
-                send_to_logger("error", f"Runtime error: {str(e)}")
-                response = None
+            # Проверяем, есть ли уже event loop
+            try:
+                loop = asyncio.get_running_loop()
+                send_to_logger("info", "Using existing event loop")
+            except RuntimeError:
+                # Нет активного loop, создаем новый
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                send_to_logger("info", "Created new event loop")
+
+            # Выполняем запрос в отдельном потоке
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(yandex_bot.ask_gpt, user_message)
+                response = future.result(timeout=120)
+
         except Exception as gpt_error:
             send_to_logger("error", f"Error in GPT call: {str(gpt_error)}")
             response = None
+        finally:
+            # Очищаем loop если создавали новый
+            if loop and loop != asyncio.get_running_loop():
+                try:
+                    loop.close()
+                except:
+                    pass
 
         end_time = time.time()
         send_to_logger("info", f"GPT response time: {end_time - start_time:.2f}s")

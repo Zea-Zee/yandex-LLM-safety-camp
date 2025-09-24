@@ -165,13 +165,21 @@ async def handle_get(request):
 async def handle_post(request):
     try:
         query = await request.json()
+        await logger("orchestrator", "info", f"Received POST request to {request.path} with data: {query}")
     except:
+        await logger("orchestrator", "error", "Invalid JSON received")
         return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
 
     match request.path:
         case '/ask_gpt':
-            gpt_answer = await ask_gpt_pipeline(**query)
-            return web.json_response(gpt_answer)
+            await logger("orchestrator", "info", f"Processing ask_gpt request with question: {query.get('question', 'No question')}")
+            try:
+                gpt_answer = await ask_gpt_pipeline(**query)
+                await logger("orchestrator", "info", f"ask_gpt completed, returning response")
+                return web.json_response(gpt_answer)
+            except Exception as e:
+                await logger("orchestrator", "error", f"Error in ask_gpt_pipeline: {str(e)}")
+                return web.json_response({"gpt_answer": "Произошла ошибка при обработке запроса. Попробуйте позже."})
         case '/gpt_moderator':
             gpt_answer = await request_gpt(**query)
             return web.json_response(gpt_answer)
