@@ -67,7 +67,6 @@ class LoggerRequestHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    time.sleep(5)
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8020))
     server_address = ('', port)

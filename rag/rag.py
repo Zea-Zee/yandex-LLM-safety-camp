@@ -311,7 +311,6 @@ class RAGHTTPServer(HTTPServer):
 # ======================
 
 def main():
-    time.sleep(5)
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8002))
     server_address = ("", port)

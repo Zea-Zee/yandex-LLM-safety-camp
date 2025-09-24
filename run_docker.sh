@@ -54,7 +54,6 @@ docker run -d --name bot --network microservices-network bot-image
 docker run -d --name logger --network microservices-network logger-image
 
 echo "All services are running. Final check:"
-sleep 5
 docker ps
 
 # -------------------------

@@ -135,7 +135,6 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    time.sleep(5)
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8001))
     server_address = ('', port)

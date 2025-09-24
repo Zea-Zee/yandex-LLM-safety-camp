@@ -183,7 +183,6 @@ class YandexGPTRequestHandler(BaseHTTPRequestHandler):
             return
 
 def main():
-    time.sleep(5)
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8000))
     server_address = ('', port)
