@@ -84,11 +84,9 @@ class YandexGPTApi:
 
     def ask_gpt(self, dict_messages):
         try:
-            send_to_logger("info", f"Starting GPT request for messages: {dict_messages}")
+            send_to_logger("info", "Starting GPT request")
 
-            send_to_logger("info", "Getting IAM token")
             iam_token = self.get_iam_token()
-            send_to_logger("info", "IAM token obtained")
 
             headers = {
                 'Content-Type': 'application/json',
@@ -97,7 +95,6 @@ class YandexGPTApi:
             }
 
             messages = self.transform_messages(dict_messages)
-            send_to_logger("info", f"Transformed messages: {messages}")
 
             data = {
                 "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite",
@@ -109,7 +106,6 @@ class YandexGPTApi:
                 "messages": messages
             }
 
-            send_to_logger("info", "Sending request to Yandex GPT API")
             start_time = time.time()
 
             response = requests.post(
@@ -127,7 +123,7 @@ class YandexGPTApi:
                 raise Exception(f"Ошибка API: {response.status_code}")
 
             gpt_response = response.json()['result']['alternatives'][0]['message']['text']
-            send_to_logger("info", f"GPT response: {gpt_response[:100]}...")
+            send_to_logger("info", f"GPT response length: {len(gpt_response)}")
             return gpt_response
 
         except Exception as e:

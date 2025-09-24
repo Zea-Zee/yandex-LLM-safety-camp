@@ -74,12 +74,17 @@ async def handle_message(update: Update, context):
             action="typing"
         )
 
-        send_to_logger("info", "Calling yandex_bot.ask_gpt")
+        send_to_logger("info", "Calling GPT service")
         start_time = time.time()
-        response = yandex_bot.ask_gpt(user_message)
-        end_time = time.time()
 
-        send_to_logger("info", f"GPT response time: {end_time - start_time:.2f}s, response: {response[:100] if response else 'None'}...")
+        try:
+            response = yandex_bot.ask_gpt(user_message)
+        except Exception as gpt_error:
+            send_to_logger("error", f"Error in GPT call: {str(gpt_error)}")
+            response = None
+
+        end_time = time.time()
+        send_to_logger("info", f"GPT response time: {end_time - start_time:.2f}s")
 
         if response is None:
             send_to_logger("error", "GPT returned None response")
@@ -87,7 +92,7 @@ async def handle_message(update: Update, context):
                 "Сервис временно недоступен. Попробуйте ещё раз позже."
             )
         else:
-            send_to_logger("info", f"Sending response to user: {response[:100]}...")
+            send_to_logger("info", f"Sending response to user")
             await update.message.reply_text(response)
 
     except Exception as e:
