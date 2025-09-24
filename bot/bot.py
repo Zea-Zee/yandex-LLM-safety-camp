@@ -1,9 +1,10 @@
 import time
 import json
 import os
+import asyncio
+import aiohttp
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import requests
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters
@@ -11,7 +12,8 @@ from telegram.ext import (
 
 from settings import TELEGRAM_TOKEN, ORCHESTRATOR_ADDRESS
 
-def send_to_logger(level, message):
+
+async def send_to_logger(level, message):
     log_message = {
         "name": "bot",
         "level": level,
@@ -19,37 +21,49 @@ def send_to_logger(level, message):
     }
     try:
         orchestrator = ORCHESTRATOR_ADDRESS + '/log'
-        response = requests.post(orchestrator, json=log_message)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                orchestrator, json=log_message
+            ) as response:
+                await response.text()
     except Exception as e:
         print(f"Error when send log: {str(e)}")
         return False
 
 
 class TelegramBot:
-    def ask_gpt(self, question):
+    async def ask_gpt(self, question):
         query = {"question": question}
 
         try:
-            send_to_logger("info", f"Sending request to orchestrator: {ORCHESTRATOR_ADDRESS}/ask_gpt")
-            response = requests.post(
-                ORCHESTRATOR_ADDRESS + '/ask_gpt',
-                json=query,
-                timeout=120  # Увеличиваем timeout
+            await send_to_logger(
+                "info",
+                f"Sending request to orchestrator: {ORCHESTRATOR_ADDRESS}/ask_gpt"
             )
-            response.raise_for_status()
-            gpt_answer = response.json()['gpt_answer']
-            send_to_logger("info", f"Got response from orchestrator: {len(gpt_answer)} chars")
-        except requests.exceptions.Timeout:
-            send_to_logger("error", "Orchestrator request timeout")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    ORCHESTRATOR_ADDRESS + '/ask_gpt',
+                    json=query,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    gpt_answer = data['gpt_answer']
+                    await send_to_logger(
+                        "info",
+                        f"Got response from orchestrator: {len(gpt_answer)} chars"
+                    )
+        except asyncio.TimeoutError:
+            await send_to_logger("error", "Orchestrator request timeout")
             return None
-        except requests.exceptions.ConnectionError:
-            send_to_logger("error", "Cannot connect to orchestrator")
+        except aiohttp.ClientConnectionError:
+            await send_to_logger("error", "Cannot connect to orchestrator")
             return None
-        except requests.exceptions.RequestException as e:
-            send_to_logger("error", f"Ошибка при запросе к серверу: {e}")
+        except aiohttp.ClientError as e:
+            await send_to_logger("error", f"Ошибка при запросе к серверу: {e}")
             return None
         except Exception as e:
-            send_to_logger("error", f"Unexpected error: {e}")
+            await send_to_logger("error", f"Unexpected error: {e}")
             return None
 
         return gpt_answer
@@ -68,69 +82,81 @@ async def start(update: Update, context):
             "Просто напиши мне свой вопрос"
         )
     except Exception as e:
-        send_to_logger("error", f"Error in start handler: {str(e)}")
+        await send_to_logger("error", f"Error in start handler: {str(e)}")
 
 
 async def handle_message(update: Update, context):
     """Обработка текстовых сообщений"""
     try:
         user_message = update.message.text
-        send_to_logger("info", f"Processing user message: {user_message}")
+        await send_to_logger(
+            "info", f"Processing user message: {user_message}"
+        )
 
         if not user_message.strip():
-            send_to_logger("warning", "Empty message received")
+            await send_to_logger("warning", "Empty message received")
             await update.message.reply_text("Пожалуйста, введите вопрос")
             return
 
         # Показываем статус "печатает"
-        send_to_logger("info", "Sending typing action")
+        await send_to_logger("info", "Sending typing action")
         await bot_application.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing"
         )
 
-        send_to_logger("info", "Calling GPT service")
+        await send_to_logger("info", "Calling GPT service")
         start_time = time.time()
 
         try:
-            response = yandex_bot.ask_gpt(user_message)
+            response = await yandex_bot.ask_gpt(user_message)
         except Exception as gpt_error:
-            send_to_logger("error", f"Error in GPT call: {str(gpt_error)}")
+            await send_to_logger("error", f"Error in GPT call: {str(gpt_error)}")
             response = None
 
         end_time = time.time()
-        send_to_logger("info", f"GPT response time: {end_time - start_time:.2f}s")
+        await send_to_logger(
+            "info", f"GPT response time: {end_time - start_time:.2f}s"
+        )
 
         if response is None:
-            send_to_logger("error", "GPT returned None response")
+            await send_to_logger("error", "GPT returned None response")
             await update.message.reply_text(
                 "Сервис временно недоступен. Попробуйте ещё раз позже."
             )
         else:
-            send_to_logger("info", f"Sending response to user")
+            await send_to_logger("info", "Sending response to user")
             await update.message.reply_text(response)
 
     except Exception as e:
-        send_to_logger("error", f"Error handling message: {str(e)}")
+        await send_to_logger(
+            "error", f"Error handling message: {str(e)}"
+        )
         try:
             await update.message.reply_text(
                 "Извините, произошла ошибка при обработке вашего запроса. "
                 "Пожалуйста, попробуйте позже."
             )
         except Exception as reply_error:
-            send_to_logger("error", f"Error sending error message: {str(reply_error)}")
+            await send_to_logger(
+                "error", f"Error sending error message: {str(reply_error)}"
+            )
 
 
 async def error_handler(update: Update, context):
     """Обработчик ошибок"""
     try:
-        send_to_logger("error", f"Update {update} caused error {context}")
+        await send_to_logger(
+            "error", f"Update {update} caused error {context}"
+        )
         if update and update.effective_message:
             await update.effective_message.reply_text(
                 "Произошла ошибка. Пожалуйста, попробуйте позже."
             )
     except Exception as e:
-        send_to_logger("error", f"Error in error handler: {str(e)}")
+        await send_to_logger(
+            "error", f"Error in error handler: {str(e)}"
+        )
 
 
 class BotRequestHandler(BaseHTTPRequestHandler):
@@ -161,7 +187,7 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                 # Создаем Update объект из данных webhook
                 update = Update.de_json(update_data, bot_application.bot)
 
-                # Обрабатываем update синхронно
+                # Обрабатываем update асинхронно
                 import asyncio
                 try:
                     # Создаем новый event loop для обработки
@@ -172,15 +198,15 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                     finally:
                         try:
                             loop.close()
-                        except:
-                            pass
+                    except Exception:
+                        pass
                 except Exception as e:
-                    send_to_logger("error", f"Error in event loop: {str(e)}")
+                    print(f"Error in event loop: {str(e)}")
 
                 self._send_json_response({"status": "ok"})
 
             except Exception as e:
-                send_to_logger("error", f"Error processing webhook: {str(e)}")
+                print(f"Error processing webhook: {str(e)}")
                 self._send_json_response(
                     {"error": "internal server error"}, status=500
                 )
@@ -190,25 +216,39 @@ class BotRequestHandler(BaseHTTPRequestHandler):
     async def _process_update(self, update: Update):
         """Обработка update от Telegram"""
         try:
-            send_to_logger("info", f"Processing update: {update.update_id}")
+            await send_to_logger(
+                "info", f"Processing update: {update.update_id}"
+            )
             if update and update.message:
-                send_to_logger("info", f"Message from user {update.message.from_user.id}: {update.message.text}")
+                await send_to_logger(
+                    "info",
+                    f"Message from user {update.message.from_user.id}: {update.message.text}"
+                )
                 if (update.message.text and
                         update.message.text.startswith('/start')):
-                    send_to_logger("info", "Processing /start command")
+                    await send_to_logger("info", "Processing /start command")
                     await start(update, None)
                 elif update.message.text:
-                    send_to_logger("info", f"Processing text message: {update.message.text[:100]}...")
+                    await send_to_logger(
+                        "info",
+                        f"Processing text message: {update.message.text[:100]}..."
+                    )
                     await handle_message(update, None)
             else:
-                send_to_logger("warning", f"Update without message: {update}")
+                await send_to_logger(
+                    "warning", f"Update without message: {update}"
+                )
         except Exception as e:
-            send_to_logger("error", f"Error processing update: {str(e)}")
+            await send_to_logger(
+                "error", f"Error processing update: {str(e)}"
+            )
             if update:
                 try:
                     await error_handler(update, None)
                 except Exception as handler_error:
-                    send_to_logger("error", f"Error in error handler: {str(handler_error)}")
+                    await send_to_logger(
+                        "error", f"Error in error handler: {str(handler_error)}"
+                    )
 
     def log_message(self, format, *args):
         """Отключаем стандартное логирование HTTP запросов"""
@@ -244,14 +284,14 @@ def main():
         server_address = ('', port)
         httpd = HTTPServer(server_address, BotRequestHandler)
 
-        send_to_logger("info", f"Бот запускается на порту {port}...")
-        send_to_logger("info", "Health check: GET /health")
-        send_to_logger("info", "Webhook: POST /webhook")
+        print(f"Бот запускается на порту {port}...")
+        print("Health check: GET /health")
+        print("Webhook: POST /webhook")
 
         httpd.serve_forever()
 
     except Exception as e:
-        send_to_logger("error", f"Failed to start bot: {str(e)}")
+        print(f"Failed to start bot: {str(e)}")
 
 
 if __name__ == "__main__":
