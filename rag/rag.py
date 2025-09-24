@@ -228,9 +228,18 @@ class RAGHelper:
 
     def get_context_chunks(self, question: str) -> str:
         send_to_logger("info", f"Запрос на поиск контекста: '{question}'")
+        start_time = time.time()
         docs = self.retriever.invoke(question)
-        send_to_logger("info", f"Найдено {len(docs)} релевантных документов")
-        return "\n\n".join(doc.page_content for doc in docs)
+        end_time = time.time()
+        send_to_logger("info", f"Найдено {len(docs)} релевантных документов за {end_time - start_time:.2f}s")
+
+        if docs:
+            context = "\n\n".join(doc.page_content for doc in docs)
+            send_to_logger("info", f"Context length: {len(context)} characters")
+            return context
+        else:
+            send_to_logger("warning", "No relevant documents found")
+            return "Контекст не найден."
 
 
 # ======================

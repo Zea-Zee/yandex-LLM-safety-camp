@@ -14,39 +14,60 @@ async def logger(name, level, message):
 
 
 async def _request_moderator(question):
+    send_to_logger("info", f"Requesting moderator for question: {question[:100]}...")
+    start_time = time.time()
     async with aiohttp.ClientSession() as session:
         async with session.post(ADDRESSES['MODERATOR_ADDRESS'], json={'question': question}) as response:
             response.raise_for_status()
             data = await response.json()
+            end_time = time.time()
+            send_to_logger("info", f"Moderator response time: {end_time - start_time:.2f}s, result: {data['is_safe']}")
             return data['is_safe']
 
 
 async def _request_rag(question):
+    send_to_logger("info", f"Requesting RAG for question: {question[:100]}...")
+    start_time = time.time()
     async with aiohttp.ClientSession() as session:
         async with session.post(ADDRESSES['RAG_ADDRESS'], json={'question': question}) as response:
             response.raise_for_status()
             data = await response.json()
-            return data['context']
+            end_time = time.time()
+            context = data['context']
+            send_to_logger("info", f"RAG response time: {end_time - start_time:.2f}s, context length: {len(context)}")
+            return context
 
 
 async def request_gpt(user, system=None):
+    send_to_logger("info", f"Requesting GPT for user: {user[:100]}..., system: {system[:100] if system else 'None'}...")
     if system is None:
         data = {'user': user}
     else:
         data = {'user': user, 'system': system}
 
+    start_time = time.time()
     async with aiohttp.ClientSession() as session:
         async with session.post(ADDRESSES['YANDEX_GPT_ADDRESS'], json=data) as response:
             response.raise_for_status()
-            return await response.json()
+            result = await response.json()
+            end_time = time.time()
+            gpt_answer = result['gpt_answer']
+            send_to_logger("info", f"GPT response time: {end_time - start_time:.2f}s, answer length: {len(gpt_answer)}")
+            return result
 
 
 async def ask_gpt_pipeline(question):
+    send_to_logger("info", f"Starting GPT pipeline for question: {question[:100]}...")
+    pipeline_start = time.time()
+
     is_safe = await _request_moderator(question)
     if not is_safe:
+        send_to_logger("warning", "Question failed moderation")
         return {'gpt_answer': 'Ваш вопрос не прошел модерацию. Попробуйте по другому сформулировать вопрос.'}
 
     context = await _request_rag(question)
+    send_to_logger("info", f"Got context from RAG, length: {len(context)}")
+
     gpt_response = await request_gpt(
         system=f"""
         Контекст: {context}
@@ -56,6 +77,8 @@ async def ask_gpt_pipeline(question):
         user=question
     )
 
+    pipeline_end = time.time()
+    send_to_logger("info", f"GPT pipeline completed in {pipeline_end - pipeline_start:.2f}s")
     return gpt_response
 
 

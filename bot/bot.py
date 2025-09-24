@@ -60,23 +60,34 @@ async def handle_message(update: Update, context):
     """Обработка текстовых сообщений"""
     try:
         user_message = update.message.text
+        send_to_logger("info", f"Processing user message: {user_message}")
 
         if not user_message.strip():
+            send_to_logger("warning", "Empty message received")
             await update.message.reply_text("Пожалуйста, введите вопрос")
             return
 
         # Показываем статус "печатает"
+        send_to_logger("info", "Sending typing action")
         await bot_application.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing"
         )
 
+        send_to_logger("info", "Calling yandex_bot.ask_gpt")
+        start_time = time.time()
         response = yandex_bot.ask_gpt(user_message)
+        end_time = time.time()
+
+        send_to_logger("info", f"GPT response time: {end_time - start_time:.2f}s, response: {response[:100] if response else 'None'}...")
+
         if response is None:
+            send_to_logger("error", "GPT returned None response")
             await update.message.reply_text(
                 "Сервис временно недоступен. Попробуйте ещё раз позже."
             )
         else:
+            send_to_logger("info", f"Sending response to user: {response[:100]}...")
             await update.message.reply_text(response)
 
     except Exception as e:
@@ -134,10 +145,15 @@ class BotRequestHandler(BaseHTTPRequestHandler):
                 import asyncio
                 try:
                     # Создаем новый event loop для обработки
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(self._process_update(update))
-                    loop.close()
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self._process_update(update))
+                    finally:
+                        try:
+                            loop.close()
+                        except:
+                            pass
                 except Exception as e:
                     send_to_logger("error", f"Error in event loop: {str(e)}")
 
@@ -154,12 +170,18 @@ class BotRequestHandler(BaseHTTPRequestHandler):
     async def _process_update(self, update: Update):
         """Обработка update от Telegram"""
         try:
+            send_to_logger("info", f"Processing update: {update.update_id}")
             if update and update.message:
+                send_to_logger("info", f"Message from user {update.message.from_user.id}: {update.message.text}")
                 if (update.message.text and
                         update.message.text.startswith('/start')):
+                    send_to_logger("info", "Processing /start command")
                     await start(update, None)
                 elif update.message.text:
+                    send_to_logger("info", f"Processing text message: {update.message.text[:100]}...")
                     await handle_message(update, None)
+            else:
+                send_to_logger("warning", f"Update without message: {update}")
         except Exception as e:
             send_to_logger("error", f"Error processing update: {str(e)}")
             if update:

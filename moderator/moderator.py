@@ -120,16 +120,30 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
         return query
 
     def do_POST(self):
+        send_to_logger("info", "Received POST request to moderator")
         query = self._retrieve_message()
         if self.path != '/':
             return
-        is_safe = self.moderator.check_question(**query)
 
+        send_to_logger("info", f"Checking question for safety: {query}")
+        start_time = time.time()
+        is_safe = self.moderator.check_question(**query)
+        end_time = time.time()
+
+        send_to_logger("info", f"Safety check completed in {end_time - start_time:.2f}s, result: {is_safe}")
         self._send_json_response({'is_safe': is_safe})
 
 
 def main():
     time.sleep(5)
+
+    # Pre-initialize moderator for faster responses
+    send_to_logger("info", "Pre-initializing moderator...")
+    start_time = time.time()
+    moderator = InjectionFilter()
+    end_time = time.time()
+    send_to_logger("info", f"Moderator pre-initialized in {end_time - start_time:.2f}s")
+
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8001))
     server_address = ('', port)

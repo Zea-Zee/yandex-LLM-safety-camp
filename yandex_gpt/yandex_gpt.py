@@ -84,7 +84,11 @@ class YandexGPTApi:
 
     def ask_gpt(self, dict_messages):
         try:
+            send_to_logger("info", f"Starting GPT request for messages: {dict_messages}")
+
+            send_to_logger("info", "Getting IAM token")
             iam_token = self.get_iam_token()
+            send_to_logger("info", "IAM token obtained")
 
             headers = {
                 'Content-Type': 'application/json',
@@ -93,6 +97,7 @@ class YandexGPTApi:
             }
 
             messages = self.transform_messages(dict_messages)
+            send_to_logger("info", f"Transformed messages: {messages}")
 
             data = {
                 "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite",
@@ -104,6 +109,9 @@ class YandexGPTApi:
                 "messages": messages
             }
 
+            send_to_logger("info", "Sending request to Yandex GPT API")
+            start_time = time.time()
+
             response = requests.post(
                 'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
                 headers=headers,
@@ -111,11 +119,16 @@ class YandexGPTApi:
                 timeout=60  # Увеличиваем timeout для GPT API
             )
 
+            end_time = time.time()
+            send_to_logger("info", f"GPT API response time: {end_time - start_time:.2f}s, status: {response.status_code}")
+
             if response.status_code != 200:
                 send_to_logger("error", f"Yandex GPT API error: {response.text}")
                 raise Exception(f"Ошибка API: {response.status_code}")
 
-            return response.json()['result']['alternatives'][0]['message']['text']
+            gpt_response = response.json()['result']['alternatives'][0]['message']['text']
+            send_to_logger("info", f"GPT response: {gpt_response[:100]}...")
+            return gpt_response
 
         except Exception as e:
             send_to_logger("error", f"Error in ask_gpt: {str(e)}")
