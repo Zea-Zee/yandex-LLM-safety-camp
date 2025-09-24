@@ -136,14 +136,6 @@ class ModeratorRequestHandler(BaseHTTPRequestHandler):
 
 def main():
     time.sleep(5)
-
-    # Pre-initialize moderator for faster responses
-    send_to_logger("info", "Pre-initializing moderator...")
-    start_time = time.time()
-    moderator = InjectionFilter()
-    end_time = time.time()
-    send_to_logger("info", f"Moderator pre-initialized in {end_time - start_time:.2f}s")
-
     # Serverless контейнеры автоматически устанавливают переменную PORT
     port = int(os.getenv('PORT', 8001))
     server_address = ('', port)
