@@ -1,25 +1,8 @@
 import time
-
 import jwt
 import requests
+from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID
 
-from settings import SERVICE_ACCOUNT_ID, KEY_ID, PRIVATE_KEY, FOLDER_ID, ORCHESTRATOR_ADDRESS
-
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import json
-
-def send_to_logger(level, message):
-    log_message = {
-        "name": "GPT",
-        "level": level,
-        "message": message
-    }
-    try:
-        orchestrator = ORCHESTRATOR_ADDRESS + '/log'
-        response = requests.post(orchestrator, json=log_message)
-    except Exception as e:
-        print(f"Error when send log: {str(e)}")
-        return False
 
 class YandexGPTApi:
     def __init__(self):
@@ -59,13 +42,13 @@ class YandexGPTApi:
 
             token_data = response.json()
             self.iam_token = token_data['iamToken']
-            self.token_expires = now + 3500  # На 100 секунд меньше срока действия
+            # На 100 секунд меньше срока действия
+            self.token_expires = now + 3500
 
-            send_to_logger("info", "IAM token generated successfully")
             return self.iam_token
 
         except Exception as e:
-            send_to_logger("error", f"Error generating IAM token: {str(e)}")
+            print(f"Error generating IAM token: {str(e)}")
             raise
 
     def transform_messages(self, input_dict):
@@ -82,7 +65,7 @@ class YandexGPTApi:
             })
         return result
 
-    def ask_gpt(self, dict_messages):
+    def ask_gpt(self, dict_messages, stream=False):
         try:
             iam_token = self.get_iam_token()
 
@@ -97,82 +80,71 @@ class YandexGPTApi:
             data = {
                 "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite",
                 "completionOptions": {
-                    "stream": False,
+                    "stream": stream,
                     "temperature": 0.6,
                     "maxTokens": 2000
                 },
                 "messages": messages
             }
 
-            response = requests.post(
-                'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
-                headers=headers,
-                json=data,
-                timeout=30
-            )
+            url = ('https://llm.api.cloud.yandex.net/foundationModels/v1/'
+                   'completion')
 
-            if response.status_code != 200:
-                send_to_logger("error", f"Yandex GPT API error: {response.text}")
-                raise Exception(f"Ошибка API: {response.status_code}")
+            if stream:
+                return self._stream_response(url, headers, data)
+            else:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=30
+                )
 
-            return response.json()['result']['alternatives'][0]['message']['text']
+                if response.status_code != 200:
+                    print(f"Yandex GPT API error: {response.text}")
+                    raise Exception(f"Ошибка API: {response.status_code}")
+
+                result = response.json()['result']['alternatives'][0]
+                return result['message']['text']
 
         except Exception as e:
-            send_to_logger("error", f"Error in ask_gpt: {str(e)}")
+            print(f"Error in ask_gpt: {str(e)}")
             raise
 
-class YandexGPTRequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, server):
-        self.yandex_gpt = YandexGPTApi()
-        super().__init__(request, client_address, server)
-        
-    def _send_json_response(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+    def _stream_response(self, url, headers, data):
+        """Обработка streaming ответа от Yandex GPT"""
+        import json
 
-    def _retrieve_message(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
-        query = json.loads(post_data.decode('utf-8'))
-        user = query['user']
-        system = query.get('system', None)
-        return query
+        response = requests.post(
+            url,
+            headers=headers,
+            json=data,
+            stream=True,
+            timeout=30
+        )
 
-    def do_POST(self):
-        try:
-            json_data = self._retrieve_message()
-        except Exception as e:
-            send_to_logger("error", "Failed to read or parse request body")
-            self._send_json_response({"error": "invalid request body"}, status=400)
-            return
-        
-        try:
-            gpt_answer = self.yandex_gpt.ask_gpt(json_data)
-        except Exception as e:
-            send_to_logger("error", "Moderator check_question failed")
-            self._send_json_response({"error": "internal server error"}, status=500)
-            return
-        
-        response = {
-            "gpt_answer": gpt_answer
-        }
+        if response.status_code != 200:
+            print(f"Yandex GPT API error: {response.text}")
+            raise Exception(f"Ошибка API: {response.status_code}")
 
-        try:
-            self._send_json_response(response) 
-        except Exception as e:
-            send_to_logger("error", "Failed to send response")
-            self._send_json_response({"error": "internal server error"}, status=500)
-            return
-    
-def main():
-    time.sleep(5)
-    server_adress = ('', 8000)
-    httpd = HTTPServer(server_adress, YandexGPTRequestHandler)
-    send_to_logger("info", "YandexGPT is running on port 8000")
-    
-    httpd.serve_forever()
+        for line in response.iter_lines():
+            if line:
+                line = line.decode('utf-8')
+                if line.startswith('data: '):
+                    data_line = line[6:]  # Убираем 'data: '
+                    if data_line.strip() == '[DONE]':
+                        break
+                    try:
+                        chunk = json.loads(data_line)
+                        if ('result' in chunk and
+                                'alternatives' in chunk['result']):
+                            alternatives = chunk['result']['alternatives']
+                            if (alternatives and
+                                    'message' in alternatives[0]):
+                                message = alternatives[0]['message']
+                                if 'text' in message:
+                                    yield message['text']
+                    except json.JSONDecodeError:
+                        continue
 
-if __name__ == '__main__':
-    main()
+# Простой класс для работы с Yandex GPT API

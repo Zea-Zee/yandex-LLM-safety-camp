@@ -1,40 +1,29 @@
-import time
+import sys
+import os
 
-import jwt
-import requests
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (Application, CommandHandler, ContextTypes,
+                          MessageHandler, filters)
 
-from settings import TELEGRAM_TOKEN, ORCHESTRATOR_ADDRESS
+# Добавляем путь к yandex_gpt модулю
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'yandex_gpt'))
 
-def send_to_logger(level, message):
-    log_message = {
-        "name": "bot",
-        "level": level,
-        "message": message
-    }
-    try:
-        orchestrator = ORCHESTRATOR_ADDRESS + '/log'
-        response = requests.post(orchestrator, json=log_message)
-    except Exception as e:
-        print(f"Error when send log: {str(e)}")
-        return False
+from yandex_gpt import YandexGPTApi
+from settings import TELEGRAM_TOKEN
 
 
 class TelegramBot:
+    def __init__(self):
+        self.gpt_api = YandexGPTApi()
+
     def ask_gpt(self, question):
-        query = {"question": question}
-
         try:
-            response = requests.post(ORCHESTRATOR_ADDRESS + '/ask_gpt', json=query)
-            response.raise_for_status()
-            gpt_answer = response.json()['gpt_answer']
-        except requests.exceptions.RequestException as e:
-            send_to_logger("error", f"Ошибка при запросе к серверу: {e}")
+            # Простой запрос без системного промпта
+            response = self.gpt_api.ask_gpt({"user": question})
+            return response
+        except Exception as e:
+            print(f"Ошибка при запросе к Yandex GPT: {e}")
             return None
-
-        return gpt_answer
-
 
 yandex_bot = TelegramBot()
 
@@ -73,7 +62,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(response)
 
     except Exception as e:
-        send_to_logger("error", f"Error handling message: {str(e)}")
+        print(f"Error handling message: {str(e)}")
         await update.message.reply_text(
             "Извините, произошла ошибка при обработке вашего запроса. "
             "Пожалуйста, попробуйте позже."
@@ -82,7 +71,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
-    send_to_logger("error", f"Update {update} caused error {context.error}")
+    print(f"Update {update} caused error {context.error}")
     if update and update.effective_message:
         await update.effective_message.reply_text(
             "Произошла ошибка. Пожалуйста, попробуйте позже."
@@ -91,19 +80,19 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Основная функция"""
-    time.sleep(5)
     try:
         application = Application.builder().token(TELEGRAM_TOKEN).build()
 
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_error_handler(error_handler)
 
-        send_to_logger("info", "Бот запускается...")
+        print("Бот запускается...")
         application.run_polling()
 
     except Exception as e:
-        send_to_logger("error", f"Failed to start bot: {str(e)}")
+        print(f"Failed to start bot: {str(e)}")
 
 
 if __name__ == "__main__":
